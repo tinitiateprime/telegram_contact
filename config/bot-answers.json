@@ -1,0 +1,21 @@
+{
+  "answers": [
+    {
+      "keywords": ["hello", "hi", "hey"],
+      "answer": "Hi. How can I help you today?"
+    },
+    {
+      "keywords": ["price", "pricing", "cost", "charges"],
+      "answer": "Please share the service or product you are asking about, and our team will send the correct price details."
+    },
+    {
+      "keywords": ["contact", "phone", "call", "support"],
+      "answer": "Please leave your name, phone number, and question. Our team will contact you soon."
+    },
+    {
+      "keywords": ["timing", "time", "open", "hours"],
+      "answer": "Our team will confirm the current working hours for your request. Please share what service you need."
+    }
+  ]
+}
+

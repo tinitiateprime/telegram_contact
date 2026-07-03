@@ -1,0 +1,94 @@
+{
+   "checksum": "91d921ba6fe766b23c28536ff902badd",
+   "roots": {
+      "bookmark_bar": {
+         "children": [ {
+            "date_added": "13426845955281232",
+            "date_last_used": "0",
+            "guid": "d50c34d5-5b8a-4d32-9613-64acbe003a7b",
+            "id": "10",
+            "name": "Agoda",
+            "show_icon": false,
+            "source": "oem_preload",
+            "type": "url",
+            "url": "https://js.redirect.hp.com/jumpstation?bd=agoda&c=242&locale=*&pf=*&tp=edge&TYPE=3",
+            "visit_count": 0
+         }, {
+            "date_added": "13426845955280564",
+            "date_last_used": "0",
+            "guid": "6c690da3-1843-4a9a-87cc-fec0473605d5",
+            "id": "9",
+            "name": "McAfee Security",
+            "show_icon": false,
+            "source": "oem_preload",
+            "type": "url",
+            "url": "https://www.mcafee.com/consumer/v/browserfav/hp.html",
+            "visit_count": 0
+         }, {
+            "date_added": "13426845955279669",
+            "date_last_used": "0",
+            "guid": "50afddca-93bd-4620-b09d-5cef37cdaffd",
+            "id": "8",
+            "name": "Adobe offers",
+            "show_icon": false,
+            "source": "oem_preload",
+            "type": "url",
+            "url": "https://js.redirect.hp.com/jumpstation?c=242&type=103EF_NW&RedeemCode=ynqFFcIa2aZYUN06P41REJU9qB%2bPZHj8PNpHHOzdZouQ9FPmRB3yGlg8qU1X8SPcarQ2cNt2RWUXGt9m5LZyLr9wMmglzkDoBxS%2f33f8ZDInFdpL97PCqtudqg%2fyX7NM1x3S%2bNZFDI7WWda1e4HybMqgJMb46xZvd9T5sslc48c%3d",
+            "visit_count": 0
+         }, {
+            "date_added": "13426845955278389",
+            "date_last_used": "0",
+            "guid": "7fadfcdf-615c-4480-bf44-28aa2f385e47",
+            "id": "7",
+            "name": "Worksheets worth ₹599 FREE",
+            "show_icon": false,
+            "source": "oem_preload",
+            "type": "url",
+            "url": "https://www.printlearncenter.com/pc-offer/?jumpid=va_in_om_mk_ot_cm018152_aw_ot_laptoptype&utm_source=offline/vanity&utm_medium=other_mp&utm_campaign=pc_bundling",
+            "visit_count": 0
+         } ],
+         "date_added": "13426845955060487",
+         "date_last_used": "0",
+         "date_modified": "13426845955281232",
+         "guid": "0bc5d13f-2cba-5d74-951f-3f233fe6c908",
+         "id": "1",
+         "name": "Favorites bar",
+         "source": "unknown",
+         "type": "folder"
+      },
+      "other": {
+         "children": [  ],
+         "date_added": "13426845955060487",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "82b081ec-3dd3-529c-8475-ab6c344590dd",
+         "id": "2",
+         "name": "Other favorites",
+         "source": "unknown",
+         "type": "folder"
+      },
+      "synced": {
+         "children": [  ],
+         "date_added": "13426845955060487",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "4cf2e351-0e85-532b-bb37-df045d8f8d0f",
+         "id": "3",
+         "name": "Mobile favorites",
+         "source": "unknown",
+         "type": "folder"
+      },
+      "workspaces_v2": {
+         "children": [  ],
+         "date_added": "13426845955060487",
+         "date_last_used": "0",
+         "date_modified": "0",
+         "guid": "75aa6670-344f-549d-b742-660f029506ab",
+         "id": "5",
+         "name": "Workspaces",
+         "source": "unknown",
+         "type": "folder"
+      }
+   },
+   "version": 1
+}

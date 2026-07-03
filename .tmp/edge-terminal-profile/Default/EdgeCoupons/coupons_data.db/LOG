@@ -1,0 +1,5 @@
+2026/06/25-13:22:45.094 6b80 Creating DB C:\Users\developer\Desktop\contact-telegram\.tmp\edge-terminal-profile\Default\EdgeCoupons/coupons_data.db since it was missing.
+2026/06/25-13:22:45.114 6b80 Reusing MANIFEST C:\Users\developer\Desktop\contact-telegram\.tmp\edge-terminal-profile\Default\EdgeCoupons/coupons_data.db/MANIFEST-000001
+2026/06/25-13:22:45.419 6f90 Level-0 table #5: started
+2026/06/25-13:22:45.426 6f90 Level-0 table #5: 682689 bytes OK
+2026/06/25-13:22:45.432 6f90 Delete type=0 #3

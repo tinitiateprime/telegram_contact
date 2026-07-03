@@ -1,0 +1,5 @@
+
+> telegram-account-flow@0.1.0 server
+> tsx src/server.ts
+
+Telegram multi-user API listening on http://127.0.0.1:8787

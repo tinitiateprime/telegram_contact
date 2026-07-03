@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    width: 1200px;
+    min-height: 760px;
+    display: grid;
+    place-items: center;
+    background: #eef2f7;
+    font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+  }
+  .terminal {
+    width: 1080px;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #101419;
+    box-shadow: 0 22px 70px rgba(15, 23, 42, 0.28);
+    border: 1px solid #27313d;
+  }
+  .bar {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    background: #1b222b;
+    border-bottom: 1px solid #2a3542;
+    color: #cbd5e1;
+    font: 600 15px/1.2 system-ui, -apple-system, Segoe UI, sans-serif;
+  }
+  .dot { width: 12px; height: 12px; border-radius: 999px; display: inline-block; }
+  .red { background: #f87171; }
+  .yellow { background: #fbbf24; }
+  .green { background: #34d399; margin-right: 10px; }
+  pre {
+    margin: 0;
+    padding: 28px 30px 34px;
+    white-space: pre-wrap;
+    color: #d7e3ee;
+    font: 22px/1.52 Consolas, "Cascadia Mono", "Courier New", monospace;
+  }
+  .prompt { color: #6ee7b7; }
+  .cmd { color: #f8fafc; }
+  .out { color: #cbd5e1; }
+  .token { color: #93c5fd; }
+</style>
+</head>
+<body>
+  <section class="terminal">
+    <div class="bar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>Terminal 2 - incoming listener</div>
+    <pre>developer@LAPTOP-KR9HG0GA MINGW64 ~/Desktop/contact-telegram
+$ npm run listen
+
+&gt; telegram-account-flow@0.1.0 listen
+&gt; tsx src/listen.ts
+
+[INFO] - [Running gramJS version 2.26.21]
+[INFO] - [Connecting to 91.108.56.185:80/TCPFull...]
+[INFO] - [Connection to 91.108.56.185:80/TCPFull complete!]
+[INFO] - [Using LAYER 198 for initial connect]
+Listening for eswar reddy (2f28e416-018e-4887-ae95-c17d09b40ddc).</pre>
+  </section>
+</body>
+</html>

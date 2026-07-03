@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <title>Telegram workflow workspace</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main>
+      <section id="sign-in-view" class="auth-shell" aria-labelledby="sign-in-title">
+        <div class="auth-card">
+          <p class="eyebrow">Private workflow access</p>
+          <h1 id="sign-in-title">Telegram Workflow</h1>
+          <p class="lede">Sign in with the configured JSON user, then manage profiles, contacts, groups, posts, and manual sending from one workspace.</p>
+
+          <form id="password-sign-in-form" class="stack" novalidate>
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" value="admin" required>
+            <label for="login-password">Password</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" value="admin123" required>
+            <button class="button primary" type="submit">Sign in</button>
+          </form>
+
+          <details class="token-panel">
+            <summary>Access token sign-in</summary>
+            <form id="token-sign-in-form" class="stack compact" novalidate>
+              <label for="access-token">Access token</label>
+              <input id="access-token" name="accessToken" type="password" autocomplete="off" spellcheck="false">
+              <button class="button ghost" type="submit">Use token</button>
+            </form>
+          </details>
+          <p id="sign-in-status" class="status" role="status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section id="workspace" class="app-shell" hidden>
+        <aside class="sidebar" aria-label="Workflow navigation">
+          <div class="brand">
+            <span class="brand-mark">T</span>
+            <div>
+              <strong>Workflow</strong>
+              <span>Telegram active</span>
+            </div>
+          </div>
+
+          <nav class="nav-menu">
+            <button class="nav-item active" type="button" data-view="dashboard">Dashboard</button>
+            <button class="nav-item" type="button" data-view="add-number">Add Number</button>
+            <button class="nav-item" type="button" data-view="manage-numbers">Manage Numbers</button>
+            <button class="nav-item" type="button" data-view="profiles">Profiles</button>
+            <button class="nav-item" type="button" data-view="applications">Applications</button>
+            <button class="nav-item" type="button" data-view="contacts">Contacts</button>
+            <button class="nav-item" type="button" data-view="inbox">Inbox</button>
+            <button class="nav-item" type="button" data-view="groups">Groups</button>
+            <button class="nav-item" type="button" data-view="channels">Channels</button>
+            <button class="nav-item" type="button" data-view="posts">Post Manager</button>
+            <button class="nav-item" type="button" data-view="post-history">Post History</button>
+            <button class="nav-item" type="button" data-view="search">Search</button>
+            <button class="nav-item" type="button" data-view="configuration">Configuration</button>
+            <button class="nav-item" type="button" data-view="backup">Backup</button>
+          </nav>
+        </aside>
+
+        <div class="main-area">
+          <header class="topbar">
+            <div>
+              <p class="eyebrow" id="view-kicker">Home</p>
+              <h1 id="view-title">Dashboard</h1>
+            </div>
+            <div class="top-actions">
+              <label class="select-shell" for="global-profile-select">
+                <span>Profile</span>
+                <select id="global-profile-select" disabled>
+                  <option value="">Connect a number first</option>
+                </select>
+              </label>
+              <button id="refresh-accounts" class="icon-button" type="button" title="Refresh account list" aria-label="Refresh account list">R</button>
+              <div id="identity" class="identity" hidden>
+                <span id="user-name"></span>
+                <button id="sign-out" class="button ghost" type="button">Logout</button>
+              </div>
+            </div>
+          </header>
+
+          <section id="view-dashboard" class="view active-view">
+            <div class="metric-grid">
+              <article class="metric-card"><span id="metric-accounts">0</span><small>Numbers</small></article>
+              <article class="metric-card"><span id="metric-contacts">0</span><small>Contacts</small></article>
+              <article class="metric-card"><span id="metric-groups">0</span><small>Groups</small></article>
+              <article class="metric-card"><span id="metric-posts">0</span><small>Posts</small></article>
+            </div>
+
+            <div class="dashboard-grid">
+              <section class="panel selected-profile-panel" aria-labelledby="selected-profile-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Selected profile</p>
+                    <h2 id="selected-profile-title">Ready account</h2>
+                  </div>
+                  <button class="mini-button" type="button" data-jump="profiles">Edit</button>
+                </div>
+                <div id="selected-profile-card" class="profile-summary"></div>
+              </section>
+
+              <section class="panel quick-send-panel" aria-labelledby="quick-send-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Manual posting</p>
+                    <h2 id="quick-send-title">Quick send</h2>
+                  </div>
+                </div>
+                <form id="quick-send-form" class="stack" novalidate>
+                  <label for="quick-recipient">Recipient</label>
+                  <input id="quick-recipient" name="recipient" type="text" autocomplete="off" placeholder="@username or existing chat" required>
+                  <label for="quick-message">Message</label>
+                  <textarea id="quick-message" name="message" rows="4" maxlength="4096" required></textarea>
+                  <button id="quick-send-button" class="button primary" type="submit" disabled>Send from selected profile</button>
+                </form>
+                <p id="message-status" class="status" role="status" aria-live="polite"></p>
+              </section>
+            </div>
+
+            <section class="panel" aria-labelledby="workflow-shortcuts-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Telegram workflow</p>
+                  <h2 id="workflow-shortcuts-title">Core modules</h2>
+                </div>
+              </div>
+              <div class="shortcut-grid">
+                <button type="button" data-jump="contacts">Contact Management</button>
+                <button type="button" data-jump="groups">Group Management</button>
+                <button type="button" data-jump="channels">Channel Management</button>
+                <button type="button" data-jump="posts">Posting Manager</button>
+              </div>
+            </section>
+          </section>
+
+          <section id="view-add-number" class="view" hidden>
+            <section class="panel connect-panel" aria-labelledby="connect-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Add new number</p>
+                  <h2 id="connect-title">Telegram login</h2>
+                </div>
+                <span id="connect-step" class="step-pill">1 of 3</span>
+              </div>
+              <p id="connect-copy" class="muted">Use the full phone number with country code. Telegram will deliver a verification code.</p>
+
+              <form id="phone-form" class="stack">
+                <label for="phone">Phone number</label>
+                <input id="phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="+919876543210" required>
+                <button class="button primary" type="submit">Send verification code</button>
+              </form>
+
+              <form id="code-form" class="stack" hidden>
+                <label for="code">Verification code</label>
+                <input id="code" name="code" type="text" autocomplete="one-time-code" inputmode="numeric" maxlength="16" required>
+                <button class="button primary" type="submit">Verify code</button>
+                <button class="button text" type="button" data-reset-login>Start over</button>
+              </form>
+
+              <form id="password-form" class="stack" hidden>
+                <label for="telegram-password">Two-factor password</label>
+                <input id="telegram-password" name="password" type="password" autocomplete="current-password" required>
+                <button class="button primary" type="submit">Connect account</button>
+                <button class="button text" type="button" data-reset-login>Start over</button>
+              </form>
+              <p id="connect-status" class="status" role="status" aria-live="polite"></p>
+            </section>
+          </section>
+
+          <section id="view-manage-numbers" class="view" hidden>
+            <section class="panel" aria-labelledby="manage-numbers-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Manage numbers</p>
+                  <h2 id="manage-numbers-title">Connected profiles</h2>
+                </div>
+                <button class="button ghost" type="button" data-jump="add-number">Add number</button>
+              </div>
+              <div class="toolbar">
+                <input id="number-search" type="search" placeholder="Search numbers, names, usernames">
+                <select id="number-status-filter">
+                  <option value="">All statuses</option>
+                  <option value="Active">Active</option>
+                  <option value="Paused">Paused</option>
+                  <option value="Archived">Archived</option>
+                </select>
+              </div>
+              <div id="account-list" class="account-list" aria-live="polite"></div>
+            </section>
+          </section>
+
+          <section id="view-profiles" class="view" hidden>
+            <div class="two-column">
+              <section class="panel" aria-labelledby="profile-editor-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Profile management</p>
+                    <h2 id="profile-editor-title">Profile details</h2>
+                  </div>
+                </div>
+                <form id="profile-form" class="stack" novalidate>
+                  <label for="profile-name">Profile name</label>
+                  <input id="profile-name" name="profileName" type="text" required>
+                  <label for="profile-display-name">Display name</label>
+                  <input id="profile-display-name" name="displayName" type="text">
+                  <label for="profile-username">Username</label>
+                  <input id="profile-username" name="username" type="text">
+                  <label for="profile-phone">Phone number</label>
+                  <input id="profile-phone" name="phone" type="tel" inputmode="tel">
+                  <label for="profile-status">Status</label>
+                  <select id="profile-status" name="status">
+                    <option>Active</option>
+                    <option>Paused</option>
+                    <option>Archived</option>
+                  </select>
+                  <label for="profile-avatar">Avatar/Image URL</label>
+                  <input id="profile-avatar" name="avatar" type="url" placeholder="https://example.com/avatar.png">
+                  <label for="profile-config-numbers">Config number(s)</label>
+                  <textarea id="profile-config-numbers" name="configNumbers" rows="3" placeholder="One number per line"></textarea>
+                  <label for="profile-description">Description</label>
+                  <textarea id="profile-description" name="description" rows="4"></textarea>
+                  <button class="button primary" type="submit">Save profile</button>
+                </form>
+                <p id="profile-status-message" class="status" role="status" aria-live="polite"></p>
+              </section>
+              <section class="panel" aria-labelledby="profile-list-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Select a profile</p>
+                    <h2 id="profile-list-title">Available profiles</h2>
+                  </div>
+                </div>
+                <div id="profile-list" class="profile-list"></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="view-applications" class="view" hidden>
+            <section class="panel" aria-labelledby="applications-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Multi-application support</p>
+                  <h2 id="applications-title">Workflow applications</h2>
+                </div>
+              </div>
+              <div id="application-list" class="application-grid"></div>
+            </section>
+          </section>
+
+          <section id="view-contacts" class="view" hidden>
+            <section class="panel" aria-labelledby="contacts-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Contact management</p>
+                  <h2 id="contacts-title">Contacts and groups</h2>
+                </div>
+              </div>
+              <div class="module-grid">
+                <form id="contact-form" class="stack" novalidate>
+                  <input id="contact-id" type="hidden">
+                  <label for="contact-name">Name</label>
+                  <input id="contact-name" type="text" required>
+                  <label for="contact-handle">Username</label>
+                  <input id="contact-handle" type="text" placeholder="@username">
+                  <label for="contact-phone">Phone</label>
+                  <input id="contact-phone" type="tel" inputmode="tel">
+                  <label for="contact-group">Contact group</label>
+                  <input id="contact-group" type="text" placeholder="Marketing">
+                  <label for="contact-notes">Notes</label>
+                  <textarea id="contact-notes" rows="3"></textarea>
+                  <div class="button-row">
+                    <button class="button primary" type="submit">Save contact</button>
+                    <button id="contact-clear" class="button ghost" type="button">Clear</button>
+                  </div>
+                </form>
+                <div>
+                  <div class="toolbar">
+                    <input id="contact-search" type="search" placeholder="Search contacts">
+                    <button id="export-contacts" class="mini-button" type="button">Export</button>
+                  </div>
+                  <textarea id="contact-import-json" class="code-box" rows="4" placeholder="Contact JSON"></textarea>
+                  <button id="import-contacts" class="mini-button" type="button">Import contacts</button>
+                  <div id="contact-list" class="record-list"></div>
+                </div>
+              </div>
+              <p id="contact-status" class="status" role="status" aria-live="polite"></p>
+            </section>
+          </section>
+
+
+          <section id="view-inbox" class="view" hidden>
+            <section class="panel" aria-labelledby="inbox-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Messages</p>
+                  <h2 id="inbox-title">Inbox</h2>
+                </div>
+                <button id="inbox-refresh" class="button ghost" type="button">Refresh</button>
+              </div>
+              <div class="chat-shell">
+                <aside class="chat-list-panel" aria-label="Message threads">
+                  <input id="inbox-search" type="search" placeholder="Search contacts or chats">
+                  <div id="inbox-thread-list" class="chat-list"></div>
+                </aside>
+                <section class="chat-panel" aria-label="Selected conversation">
+                  <div id="inbox-active-heading" class="chat-heading"></div>
+                  <div id="inbox-thread" class="chat-thread"></div>
+                  <form id="inbox-form" class="chat-composer" novalidate>
+                    <textarea id="inbox-message" rows="2" maxlength="4096" placeholder="Type a message"></textarea>
+                    <button id="inbox-send-button" class="button primary" type="submit">Send</button>
+                  </form>
+                </section>
+              </div>
+              <p id="inbox-status" class="status" role="status" aria-live="polite"></p>
+            </section>
+          </section>
+          <section id="view-groups" class="view" hidden>
+            <section class="panel" aria-labelledby="groups-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Group management</p>
+                  <h2 id="groups-title">Groups and members</h2>
+                </div>
+              </div>
+              <div class="module-grid">
+                <form id="group-form" class="stack" novalidate>
+                  <input id="group-id" type="hidden">
+                  <label for="group-name">Group name</label>
+                  <input id="group-name" type="text" required>
+                  <label for="group-type">Type</label>
+                  <select id="group-type"><option>Private</option><option>Public</option></select>
+                  <label for="group-status">Action status</label>
+                  <select id="group-status"><option>Created</option><option>Joined</option><option>Left</option><option>Archived</option></select>
+                  <label for="group-members">Members</label>
+                  <textarea id="group-members" rows="3" placeholder="One @username or +91 number per line"></textarea>
+                  <label for="group-notes">Settings</label>
+                  <textarea id="group-notes" rows="3"></textarea>
+                  <div class="button-row">
+                    <button class="button primary" type="submit">Save group</button>
+                    <button id="group-clear" class="button ghost" type="button">Clear</button>
+                  </div>
+                </form>
+                <div id="group-list" class="record-list"></div>
+              </div>
+            </section>
+          </section>
+
+          <section id="view-channels" class="view" hidden>
+            <section class="panel" aria-labelledby="channels-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Channel management</p>
+                  <h2 id="channels-title">Channels and invites</h2>
+                </div>
+              </div>
+              <div class="module-grid">
+                <form id="channel-form" class="stack" novalidate>
+                  <input id="channel-id" type="hidden">
+                  <label for="channel-name">Channel name</label>
+                  <input id="channel-name" type="text" required>
+                  <label for="channel-privacy">Privacy</label>
+                  <select id="channel-privacy"><option>Private</option><option>Public</option></select>
+                  <label for="channel-invites">Invite members</label>
+                  <textarea id="channel-invites" rows="3" placeholder="One username per line"></textarea>
+                  <label for="channel-notes">Settings</label>
+                  <textarea id="channel-notes" rows="3"></textarea>
+                  <div class="button-row">
+                    <button class="button primary" type="submit">Save channel</button>
+                    <button id="channel-clear" class="button ghost" type="button">Clear</button>
+                  </div>
+                </form>
+                <div id="channel-list" class="record-list"></div>
+              </div>
+            </section>
+          </section>
+
+          <section id="view-posts" class="view" hidden>
+            <div class="post-layout">
+              <section class="panel" aria-labelledby="post-editor-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Posting manager</p>
+                    <h2 id="post-editor-title">Create post</h2>
+                  </div>
+                </div>
+                <form id="post-form" class="stack" novalidate>
+                  <input id="post-id" type="hidden">
+                  <label for="post-title">Post title</label>
+                  <input id="post-title" type="text" required>
+                  <div class="form-grid">
+                    <label>Type<select id="post-type"><option value="text">Text only</option><option value="image">Image + text</option><option value="video">Video + text</option><option value="document">Document</option><option value="audio">Audio</option><option value="voice">Voice message</option><option value="poll">Poll</option><option value="quiz">Quiz</option><option value="forwarded">Forwarded message</option></select></label>
+                    <label>Category<input id="post-category" type="text" placeholder="Marketing"></label>
+                    <label>Tags<input id="post-tags" type="text" placeholder="date, offer, news"></label>
+                    <label>Status<select id="post-status"><option>Draft</option><option>Ready</option><option>Scheduled</option><option>Posted</option></select></label>
+                  </div>
+                  <label for="post-scheduled-at">Scheduled date</label>
+                  <input id="post-scheduled-at" type="datetime-local">
+                  <label for="post-media-url">Media URL</label>
+                  <input id="post-media-url" type="url" placeholder="https://example.com/media.jpg">
+                  <label for="post-body">Text or caption</label>
+                  <textarea id="post-body" rows="6"></textarea>
+                  <label for="post-recipient">Manual posting target</label>
+                  <input id="post-recipient" type="text" placeholder="@channel, @username, or chat">
+                  <label>Saved contacts</label>
+                  <div id="post-contact-targets" class="recipient-list"></div>
+                  <label>Saved groups</label>
+                  <div id="post-group-targets" class="recipient-list"></div>
+                  <div class="button-row">
+                    <button class="button primary" type="submit">Save post</button>
+                    <button id="post-send-now" class="button ghost" type="button">Post now</button>
+                    <button id="post-schedule" class="button ghost" type="button">Schedule</button>
+                    <button id="post-clear" class="button text" type="button">Clear</button>
+                  </div>
+                </form>
+                <p id="post-status-message" class="status" role="status" aria-live="polite"></p>
+              </section>
+
+              <section class="panel" aria-labelledby="post-preview-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Preview</p>
+                    <h2 id="post-preview-title">Post preview</h2>
+                  </div>
+                </div>
+                <div id="post-preview" class="post-preview"></div>
+              </section>
+
+              <section class="panel post-list-panel" aria-labelledby="post-list-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Post lists</p>
+                    <h2 id="post-list-title">Categories and tags</h2>
+                  </div>
+                </div>
+                <div class="toolbar">
+                  <input id="post-search" type="search" placeholder="Search posts">
+                  <select id="post-filter-type"><option value="">All types</option><option value="text">Text</option><option value="image">Image</option><option value="video">Video</option><option value="poll">Poll</option><option value="quiz">Quiz</option></select>
+                  <select id="post-sort"><option value="created-desc">Newest</option><option value="created-asc">Oldest</option><option value="category">Category</option><option value="scheduled">Scheduled date</option></select>
+                </div>
+                <div id="post-list" class="record-list"></div>
+              </section>
+            </div>
+          </section>
+
+
+          <section id="view-post-history" class="view" hidden>
+            <div class="two-column">
+              <section class="panel" aria-labelledby="sent-post-history-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Sharing details</p>
+                    <h2 id="sent-post-history-title">Sent Posts</h2>
+                  </div>
+                </div>
+                <div id="post-history-sent" class="record-list"></div>
+              </section>
+
+              <section class="panel" aria-labelledby="pending-post-history-title">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">Post status</p>
+                    <h2 id="pending-post-history-title">Pending / Not Yet Sent Posts</h2>
+                  </div>
+                </div>
+                <div id="post-history-pending" class="record-list"></div>
+              </section>
+            </div>
+          </section>
+          <section id="view-search" class="view" hidden>
+            <section class="panel" aria-labelledby="search-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Search</p>
+                  <h2 id="search-title">Workspace search</h2>
+                </div>
+              </div>
+              <input id="global-search" type="search" placeholder="Search numbers, profiles, contacts, groups, channels, posts">
+              <div id="global-results" class="record-list search-results"></div>
+            </section>
+          </section>
+
+          <section id="view-configuration" class="view" hidden>
+            <section class="panel" aria-labelledby="configuration-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Configuration</p>
+                  <h2 id="configuration-title">Application settings</h2>
+                </div>
+              </div>
+              <form id="settings-form" class="stack settings-grid" novalidate>
+                <label>API settings<input id="setting-api" type="text" placeholder="Server API"></label>
+                <label>Telegram configuration<input id="setting-telegram" type="text" placeholder="Default Telegram workflow"></label>
+                <label>Session management<select id="setting-session"><option>Browser session</option><option>Short session</option><option>Manual logout only</option></select></label>
+                <label>Proxy settings<input id="setting-proxy" type="text" placeholder="Proxy URL"></label>
+                <label>Storage settings<select id="setting-storage"><option>Browser local workspace</option><option>JSON files</option><option>Markdown files</option><option>Database later</option></select></label>
+                <label>General settings<select id="setting-theme"><option>Dark mode</option><option>Light mode</option></select></label>
+                <button class="button primary" type="submit">Save settings</button>
+              </form>
+              <p id="settings-status" class="status" role="status" aria-live="polite"></p>
+            </section>
+          </section>
+
+          <section id="view-backup" class="view" hidden>
+            <section class="panel" aria-labelledby="backup-title">
+              <div class="panel-heading">
+                <div>
+                  <p class="eyebrow">Backup and restore</p>
+                  <h2 id="backup-title">Workspace JSON</h2>
+                </div>
+              </div>
+              <div class="button-row">
+                <button id="backup-export" class="button primary" type="button">Export backup</button>
+                <button id="backup-import" class="button ghost" type="button">Restore backup</button>
+              </div>
+              <textarea id="backup-json" class="code-box large" rows="16" spellcheck="false"></textarea>
+              <p id="backup-status" class="status" role="status" aria-live="polite"></p>
+            </section>
+          </section>
+        </div>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
