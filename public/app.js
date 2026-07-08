@@ -130,7 +130,13 @@ function profileFor(account) {
   state.profiles[account.id] ||= { profileName: account.displayName || "Telegram profile", displayName: account.displayName || "", username: account.username || "", phone: "", status: "Active", avatar: "", configNumbers: "", description: "" };
   return state.profiles[account.id];
 }
-function avatar(profile, fallback) { return profile?.avatar ? `<span class="account-avatar"><img src="${esc(profile.avatar)}" alt=""></span>` : `<span class="account-avatar">${esc((fallback || "T").trim().slice(0, 1).toUpperCase())}</span>`; }
+function initials(value) {
+  const parts = String(value || "T").trim().split(/\s+/).filter(Boolean);
+  const letters = `${parts[0]?.[0] || "T"}${parts.length > 1 ? parts[parts.length - 1][0] : ""}`;
+  return letters.toUpperCase().slice(0, 2);
+}
+function avatar(profile, fallback) { return profile?.avatar ? `<span class="account-avatar"><img src="${esc(profile.avatar)}" alt=""></span>` : `<span class="account-avatar">${esc(initials(fallback))}</span>`; }
+function chatAvatar(label, extraClass = "") { return `<span class="chat-avatar${extraClass ? ` ${extraClass}` : ""}" aria-hidden="true">${esc(initials(label))}</span>`; }
 function saveAll() { write(keys.profiles, state.profiles); write(keys.contacts, state.contacts); write(keys.groups, state.groups); write(keys.channels, state.channels); write(keys.posts, state.posts); write(keys.postHistory, state.postHistory); write(keys.settings, state.settings); }
 function selectAccount(id) { state.selected = id || ""; state.selected ? localStorage.setItem(keys.selected, state.selected) : localStorage.removeItem(keys.selected); state.inbox.messages = []; state.inbox.selectedThread = ""; state.inbox.lastSyncAt = 0; state.inbox.drafts = {}; render(); if (state.activeView === "inbox") void loadInboxMessages({ quiet: true }); }
 function ensureSelected() { if (!state.accounts.some((account) => account.id === state.selected)) state.selected = state.accounts[0]?.id || ""; }
@@ -543,7 +549,8 @@ function shortMessageTime(value) {
 function renderInboxMessageBubble(message, inboundLabel = "Reply") {
   const direction = message.direction === "outbound" ? "outbound" : "inbound";
   const speaker = direction === "outbound" ? "You" : inboundLabel;
-  return `<article class="message-bubble ${direction}"><p>${esc(message.text || "")}</p><div class="message-meta"><span>${esc(speaker)}</span><span>${esc(shortMessageTime(message.createdAt))}</span></div></article>`;
+  const ticks = direction === "outbound" ? '<span class="message-status" aria-label="Sent">&#10003;&#10003;</span>' : "";
+  return `<article class="message-bubble ${direction}"><p>${esc(message.text || "")}</p><div class="message-meta"><span class="message-speaker">${esc(speaker)}</span><time datetime="${esc(message.createdAt || "")}">${esc(shortMessageTime(message.createdAt))}</time>${ticks}</div></article>`;
 }
 function renderMultiChatBoard(threads) {
   if (!el.inboxMultiBoard) return;
@@ -556,7 +563,7 @@ function renderMultiChatBoard(threads) {
     const draft = state.inbox.drafts?.[thread.id] || "";
     const placeholder = thread.recipient ? `Message ${thread.label}` : "Add username or phone first";
     const body = messages.length ? messages.map((message) => renderInboxMessageBubble(message, thread.label)).join("") : empty(thread.recipient ? "No messages yet." : "Add a username or phone to send.");
-    return `<article class="multi-chat-column${active}"><header class="multi-chat-heading"><button class="multi-chat-title" type="button" data-inbox-thread="${esc(thread.id)}"><span>${esc(thread.label)}</span><small>${esc(shortMessageTime(thread.latest?.createdAt || ""))}</small></button><p>${esc(detail)}</p></header><div class="multi-chat-messages">${body}</div><form class="multi-chat-composer" data-inbox-quick-form="${esc(thread.id)}" novalidate><textarea data-inbox-draft="${esc(thread.id)}" rows="1" maxlength="4096" placeholder="${esc(placeholder)}"${disabled}>${esc(draft)}</textarea><button class="mini-button" type="submit"${disabled}>Send</button></form></article>`;
+    return `<article class="multi-chat-column${active}"><header class="multi-chat-heading">${chatAvatar(thread.label, "small")}<div class="multi-chat-header-text"><button class="multi-chat-title" type="button" data-inbox-thread="${esc(thread.id)}"><span>${esc(thread.label)}</span><small>${esc(shortMessageTime(thread.latest?.createdAt || ""))}</small></button><p>${esc(detail)}</p></div></header><div class="multi-chat-messages">${body}</div><form class="multi-chat-composer" data-inbox-quick-form="${esc(thread.id)}" novalidate><textarea data-inbox-draft="${esc(thread.id)}" rows="1" maxlength="4096" placeholder="${esc(placeholder)}"${disabled}>${esc(draft)}</textarea><button class="mini-button" type="submit"${disabled}>Send</button></form></article>`;
   }).join("") : empty("No saved contacts or messages yet.");
   requestAnimationFrame(() => {
     el.inboxMultiBoard.querySelectorAll(".multi-chat-messages").forEach((node) => { node.scrollTop = node.scrollHeight; });
@@ -629,7 +636,8 @@ function renderInbox() {
   el.inboxThreadList.innerHTML = threads.length ? threads.map((thread) => {
     const active = thread.id === state.inbox.selectedThread ? " active" : "";
     const preview = thread.latest?.text || (thread.recipient ? "No messages yet" : "Telegram chat");
-    return `<button class="chat-thread-button${active}" type="button" data-inbox-thread="${esc(thread.id)}"><div class="chat-thread-title"><span>${esc(thread.label)}</span><span class="chat-thread-time">${esc(shortMessageTime(thread.latest?.createdAt || ""))}</span></div><div class="chat-thread-meta">${esc(thread.detail || thread.recipient || "No recipient saved")}</div><div class="chat-thread-preview">${esc(preview)}</div></button>`;
+    const unread = thread.latest?.direction === "inbound" ? '<span class="unread-dot" aria-label="Unread reply"></span>' : "";
+    return `<button class="chat-thread-button${active}" type="button" data-inbox-thread="${esc(thread.id)}">${chatAvatar(thread.label)}<span class="chat-thread-main"><span class="chat-thread-title"><span>${esc(thread.label)}</span><span class="chat-thread-time">${esc(shortMessageTime(thread.latest?.createdAt || ""))}</span></span><span class="chat-thread-meta">${esc(thread.detail || thread.recipient || "No recipient saved")}</span><span class="chat-thread-preview"><span>${esc(preview)}</span>${unread}</span></span></button>`;
   }).join("") : empty("No saved contacts or messages yet.");
   renderMultiChatBoard(threads);
 
@@ -644,7 +652,7 @@ function renderInbox() {
     return;
   }
 
-  el.inboxActiveHeading.innerHTML = `<h3>${esc(thread.label)}</h3><p class="muted">${esc(thread.detail || thread.recipient || "Add a username or phone to this contact before sending.")}</p>`;
+  el.inboxActiveHeading.innerHTML = `<div class="chat-heading-profile">${chatAvatar(thread.label)}<div><h3>${esc(thread.label)}</h3><p class="muted">${esc(thread.detail || thread.recipient || "Add a username or phone to this contact before sending.")}</p></div></div>`;
   const messages = messagesForThread(thread);
   el.inboxThread.innerHTML = messages.length ? messages.map((message) => renderInboxMessageBubble(message, thread.label)).join("") : empty(canSend ? "No messages yet. Type below to start this chat." : "This contact needs a username or phone before you can send.");
   requestAnimationFrame(() => { el.inboxThread.scrollTop = el.inboxThread.scrollHeight; });
