@@ -8,12 +8,13 @@ import {
   completeTelegramLoginWithPassword,
   revokeTelegramSession,
   sendTelegramMessage,
+  listenForAccount,
   normalizePhone
 } from "./account-client.js";
 import { readConfig } from "./config.js";
 import { configuredLoginId, findConfiguredLoginUser, readConfiguredLoginUsers } from "./login-config.js";
 import { RequestRateLimiter } from "./rate-limit.js";
-import { AccountAlreadyLinkedError, type AppUser, MultiUserStore } from "./store.js";
+import { AccountAlreadyLinkedError, type AppUser, MultiUserStore, type TelegramAccountWithSession } from "./store.js";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonBody = Record<string, unknown>;
@@ -33,6 +34,10 @@ const publicFiles = new Map([
   ["/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
   ["/styles.css", { file: "styles.css", type: "text/css; charset=utf-8" }]
 ]);
+type TelegramListenerClient = Awaited<ReturnType<typeof listenForAccount>>;
+
+const telegramListeners = new Map<string, TelegramListenerClient>();
+const startingTelegramListeners = new Map<string, Promise<void>>();
 
 function responseHeaders(request: IncomingMessage, contentType: string) {
   const headers: Record<string, string | number> = {
@@ -205,6 +210,62 @@ function accountIdFromPath(pathname: string) {
   const match = /^\/v1\/telegram\/accounts\/([^/]+)$/.exec(pathname);
   return match?.[1] ?? null;
 }
+async function recordIncomingMessage(accountId: string, message: { chatId: string; senderId: string; senderRef: string; messageId: string; text: string; createdAt?: string }) {
+  const text = message.text.trim();
+  if (!text || !message.messageId) return;
+  await store.recordMessage({
+    accountId,
+    direction: "inbound",
+    recipient: message.senderRef || message.senderId || message.chatId || "unknown",
+    text,
+    telegramMessageId: message.messageId,
+    createdAt: message.createdAt
+  });
+}
+
+async function startTelegramListener(account: TelegramAccountWithSession) {
+  if (telegramListeners.has(account.id) || startingTelegramListeners.has(account.id)) return;
+  const startup = (async () => {
+    try {
+      const client = await listenForAccount(account.sessionString, (message) => recordIncomingMessage(account.id, message));
+      telegramListeners.set(account.id, client);
+      console.log(`Incoming Telegram listener started for account ${account.id}.`);
+    } catch {
+      console.error(`Incoming Telegram listener could not start for account ${account.id}.`);
+    } finally {
+      startingTelegramListeners.delete(account.id);
+    }
+  })();
+  startingTelegramListeners.set(account.id, startup);
+  await startup;
+}
+
+async function startStoredTelegramListeners() {
+  const accounts = await store.getAllAccountsWithSessions();
+  if (accounts.length === 0) {
+    console.log("No connected Telegram accounts to listen for.");
+    return;
+  }
+  await Promise.all(accounts.map((account) => startTelegramListener(account)));
+}
+
+async function stopTelegramListener(accountId: string) {
+  await startingTelegramListeners.get(accountId);
+  const client = telegramListeners.get(accountId);
+  if (!client) return;
+  telegramListeners.delete(accountId);
+  try {
+    await client.disconnect();
+  } catch {
+    console.error(`Incoming Telegram listener could not stop cleanly for account ${accountId}.`);
+  }
+}
+
+async function stopAllTelegramListeners() {
+  await Promise.all(Array.from(startingTelegramListeners.values()));
+  await Promise.all(Array.from(telegramListeners.keys()).map((accountId) => stopTelegramListener(accountId)));
+}
+
 
 function normalizePhoneFromBody(body: JsonBody) {
   try {
@@ -274,6 +335,12 @@ function telegramSendError(error: unknown) {
   if (operational) return operational;
   const message = error instanceof Error ? error.message : String(error);
   const normalized = message.toUpperCase();
+  const floodWait = message.match(/wait (?:of )?(\d+) seconds|FLOOD_WAIT_(\d+)/i);
+  if (normalized.includes("FLOOD") || floodWait) {
+    const seconds = Number(floodWait?.[1] || floodWait?.[2] || 0);
+    const waitText = Number.isFinite(seconds) && seconds > 0 ? `${seconds} seconds` : "a few minutes";
+    return new HttpError(429, `Telegram is rate-limiting contact imports. Use the contact's @username if available, or try again after ${waitText}.`);
+  }
   if (
     normalized.includes("PHONE") ||
     normalized.includes("USERNAME") ||
@@ -416,6 +483,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       return;
     }
     const account = await store.saveTelegramAccount(user.id, { ...result.profile, sessionString: result.sessionString });
+        void startTelegramListener({ ...account, sessionString: result.sessionString });
     await store.deleteLoginChallenge(user.id, challenge.id);
     sendJson(request, response, 201, { ok: true, status: "connected", account });
     return;
@@ -436,6 +504,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
       throw telegramLoginError(error);
     }
     const account = await store.saveTelegramAccount(user.id, { ...result.profile, sessionString: result.sessionString });
+        void startTelegramListener({ ...account, sessionString: result.sessionString });
     await store.deleteLoginChallenge(user.id, challenge.id);
     sendJson(request, response, 201, { ok: true, status: "connected", account });
     return;
@@ -450,6 +519,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (request.method === "DELETE" && accountId) {
     const account = await store.deleteAccount(user.id, accountId);
     if (!account) throw new HttpError(404, "Telegram account was not found.");
+    await stopTelegramListener(account.id);
     try {
       await revokeTelegramSession(account.sessionString);
     } catch {
@@ -481,6 +551,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     } catch (error) {
       throw telegramSendError(error);
     }
+    void startTelegramListener(account);
     const message = await store.recordMessage({
       accountId: account.id,
       direction: "outbound",
@@ -497,6 +568,10 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     if (!accountId) throw new HttpError(400, "accountId is required.");
     const requestedLimit = Number(url.searchParams.get("limit") ?? "50");
     const limit = Number.isFinite(requestedLimit) ? Math.floor(requestedLimit) : 50;
+    const account = await store.getAccountWithSession(user.id, accountId);
+    if (!account) throw new HttpError(404, "Telegram account was not found.");
+    void startTelegramListener(account);
+
     sendJson(request, response, 200, { ok: true, messages: await store.listMessages(user.id, accountId, limit) });
     return;
   }
@@ -520,7 +595,20 @@ async function main() {
   });
   server.listen(config.servicePort, config.serviceHost, () => {
     console.log(`Telegram multi-user API listening on http://${config.serviceHost}:${config.servicePort}`);
+    void startStoredTelegramListeners();
   });
+
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    server.close();
+    await stopAllTelegramListeners();
+    await store.close();
+    process.exit(0);
+  };
+  process.once("SIGINT", () => void shutdown());
+  process.once("SIGTERM", () => void shutdown());
 }
 
 main().catch(() => {

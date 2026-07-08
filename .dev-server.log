@@ -1,0 +1,74 @@
+
+> telegram-account-flow@0.1.0 server
+> tsx src/server.ts
+
+Telegram multi-user API listening on http://127.0.0.1:8787
+[33m[2026-07-07T16:14:19.613] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:14:19.615] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:14:19.617] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:19.619] [INFO] - [Connecting to 91.108.56.159:80/TCPFull...][0m
+[33m[2026-07-07T16:14:19.759] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:14:19.760] [INFO] - [Using LAYER 198 for initial connect][0m
+[33m[2026-07-07T16:14:19.766] [INFO] - [Connection to 91.108.56.159:80/TCPFull complete!][0m
+[33m[2026-07-07T16:14:19.767] [INFO] - [Using LAYER 198 for initial connect][0m
+Incoming Telegram listener started for account 6f300a33-c514-477e-8155-d03252da850c.
+Incoming Telegram listener started for account 99360d29-a543-45ca-94ec-c561250a56c0.
+[33m[2026-07-07T16:14:21.449] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:14:21.459] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:21.509] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:14:21.510] [INFO] - [Using LAYER 198 for initial connect][0m
+[35m[2026-07-07T16:14:22.557] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:14:22.557] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:22.563] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:14:31.451] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:14:31.457] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:31.529] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:14:31.531] [INFO] - [Using LAYER 198 for initial connect][0m
+[35m[2026-07-07T16:14:33.276] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:14:33.282] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:33.286] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:14:41.455] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:14:41.462] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:41.570] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:14:41.572] [INFO] - [Using LAYER 198 for initial connect][0m
+[33m[2026-07-07T16:14:41.981] [INFO] - [Sleeping for 11s on flood wait (Caused by contacts.GetContacts)][0m
+[35m[2026-07-07T16:14:54.474] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:14:54.476] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:14:54.480] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:15:01.453] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:15:01.460] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:01.539] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:15:01.541] [INFO] - [Using LAYER 198 for initial connect][0m
+[35m[2026-07-07T16:15:03.075] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:15:03.077] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:03.079] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:15:11.446] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:15:11.452] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:11.575] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:15:11.577] [INFO] - [Using LAYER 198 for initial connect][0m
+[33m[2026-07-07T16:15:11.984] [INFO] - [Sleeping for 12s on flood wait (Caused by contacts.GetContacts)][0m
+[35m[2026-07-07T16:15:24.906] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:15:24.911] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:24.914] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:15:31.449] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:15:31.450] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:31.553] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:15:31.555] [INFO] - [Using LAYER 198 for initial connect][0m
+[35m[2026-07-07T16:15:32.875] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:15:32.877] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:32.879] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:15:41.443] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:15:41.448] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:41.589] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:15:41.591] [INFO] - [Using LAYER 198 for initial connect][0m
+[33m[2026-07-07T16:15:41.990] [INFO] - [Sleeping for 13s on flood wait (Caused by contacts.GetContacts)][0m
+[35m[2026-07-07T16:15:56.276] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:15:56.276] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:15:56.280] [INFO] - [connection closed][0m
+[33m[2026-07-07T16:16:01.447] [INFO] - [Running gramJS version 2.26.21][0m
+[33m[2026-07-07T16:16:01.447] [INFO] - [Connecting to 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:16:01.548] [INFO] - [Connection to 91.108.56.148:80/TCPFull complete!][0m
+[33m[2026-07-07T16:16:01.551] [INFO] - [Using LAYER 198 for initial connect][0m
+[35m[2026-07-07T16:16:02.777] [WARN] - [Disconnecting...][0m
+[33m[2026-07-07T16:16:02.779] [INFO] - [Disconnecting from 91.108.56.148:80/TCPFull...][0m
+[33m[2026-07-07T16:16:02.781] [INFO] - [connection closed][0m

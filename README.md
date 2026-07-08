@@ -84,7 +84,7 @@ CREATE DATABASE telegram_multiuser OWNER telegram_app;
 
 Do not use a shared or unrelated database. The app creates its own tables on first server startup.
 
-### 3. Create `.env`
+### 3. Create `.env`.
 
 Copy the example file:
 
@@ -129,7 +129,7 @@ npm run server
 Expected output:
 
 ```text
-Telegram multi-user API listening on http://127.0.0.1:8787
+Telegram multi-users API listening on http://127.0.0.1:8787
 ```
 
 Open:
@@ -188,6 +188,55 @@ npm run listen
 Then use the browser at `http://127.0.0.1:8787`.
 
 If frontend files changed, restart `npm run server` and hard refresh the browser with `Ctrl + F5`.
+
+## Docker Compose Workflow
+
+Use Docker when you want the app and PostgreSQL to run together without installing PostgreSQL locally.
+
+1. Copy the Docker env template:
+
+```bash
+cp .env.docker.example .env.docker
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.docker.example .env.docker
+```
+
+2. Fill `.env.docker` with `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, `SESSION_ENCRYPTION_KEY`, and `USER_PROVISIONING_KEY`.
+
+Generate the two private keys with:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+3. Start the app and database:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+```text
+http://127.0.0.1:8787
+```
+
+Useful Docker commands:
+
+```bash
+docker compose up -d --build
+docker compose logs -f app
+docker compose down
+docker compose down -v
+```
+
+`docker compose down -v` deletes the PostgreSQL volume and all connected Telegram sessions/messages. Use it only when you want a fresh database.
+
+If port `8787` is already in use, stop your local `npm run server` process first or change the host port in `docker-compose.yml` from `8787:8787` to another host port, for example `8788:8787`.
 
 ## Browser Dashboard Guide
 

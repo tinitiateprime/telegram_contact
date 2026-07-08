@@ -1,5 +1,6 @@
 const keys = {
   selected: "telegramWorkflow:selectedAccount",
+  inboxView: "telegramWorkflow:inboxView",
   profiles: "telegramWorkflow:profiles",
   contacts: "telegramWorkflow:contacts",
   groups: "telegramWorkflow:groups",
@@ -16,7 +17,7 @@ const titles = {
   profiles: ["Profiles", "Profile Management"],
   applications: ["Applications", "Workflow Applications"],
   contacts: ["Contacts", "Contact Management"],
-  inbox: ["Messages", "Inbox"],
+  inbox: ["Messages", "Message"],
   groups: ["Groups", "Group Management"],
   channels: ["Channels", "Channel Management"],
   posts: ["Posting", "Posting Manager"],
@@ -27,7 +28,12 @@ const titles = {
 };
 
 const postLabels = { text: "Text only", image: "Image + text", video: "Video + text", document: "Document", audio: "Audio", voice: "Voice", poll: "Poll", quiz: "Quiz", forwarded: "Forwarded" };
+const inboxViewLabels = { split: "Split", compact: "Compact", focus: "Focus", multi: "Multi" };
 const apps = ["Telegram Workflow", "WhatsApp Workflow", "Discord Workflow", "Slack Workflow"];
+const contactCountries = Array.from(document.querySelectorAll("#phone-country-code option"))
+  .map((option) => ({ code: option.value, label: option.textContent.trim() }))
+  .filter((country) => country.code && country.label);
+const contactCountryCodes = [...new Set(contactCountries.map((country) => country.code))];
 const $ = (id) => document.getElementById(id);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 const read = (key, fallback) => { try { const value = localStorage.getItem(key); return value ? JSON.parse(value) : fallback; } catch { return fallback; } };
@@ -35,6 +41,41 @@ const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 const uid = (prefix) => `${prefix}_${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`}`;
 const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 const lines = (value) => String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+
+function populateContactCountrySelect(select) {
+  select.innerHTML = "";
+  contactCountries.forEach((country) => select.add(new Option(country.label, country.code)));
+  select.value = "+91";
+}
+
+function ensureCountryCodeField(phoneInputId, selectId) {
+  const phoneInput = $(phoneInputId);
+  if (!phoneInput) return;
+  let select = $(selectId);
+  if (!select) {
+    select = document.createElement("select");
+    select.id = selectId;
+    select.name = "countryCode";
+    select.setAttribute("aria-label", "Country code");
+    select.setAttribute("autocomplete", "tel-country-code");
+    const row = document.createElement("div");
+    row.className = "phone-input-row";
+    phoneInput.parentNode.insertBefore(row, phoneInput);
+    row.append(select, phoneInput);
+  }
+  populateContactCountrySelect(select);
+}
+
+function ensureContactCountryCodeField() {
+  ensureCountryCodeField("contact-phone", "contact-country-code");
+}
+
+function ensureLoginCountryCodeField() {
+  ensureCountryCodeField("phone", "phone-country-code");
+}
+
+ensureLoginCountryCodeField();
+ensureContactCountryCodeField();
 
 const state = {
   user: null,
@@ -49,7 +90,7 @@ const state = {
   postHistory: read(keys.postHistory, []),
   settings: read(keys.settings, { api: "Server API", telegram: "Default Telegram workflow", session: "Browser session", proxy: "", storage: "Browser local workspace", theme: "Dark mode" }),
   activeView: "dashboard",
-  inbox: { messages: [], selectedThread: "", loading: false },
+  inbox: { messages: [], selectedThread: "", loading: false, lastSyncAt: 0, view: localStorage.getItem(keys.inboxView) || "split", drafts: {} },
   scheduledSending: new Set()
 };
 
@@ -57,13 +98,13 @@ const el = {
   signInView: $("sign-in-view"), workspace: $("workspace"), identity: $("identity"), userName: $("user-name"), signOut: $("sign-out"),
   passwordSignInForm: $("password-sign-in-form"), tokenSignInForm: $("token-sign-in-form"), username: $("username"), loginPassword: $("login-password"), accessToken: $("access-token"), signInStatus: $("sign-in-status"),
   viewKicker: $("view-kicker"), viewTitle: $("view-title"), profileSelect: $("global-profile-select"), refreshAccounts: $("refresh-accounts"),
-  phoneForm: $("phone-form"), phone: $("phone"), codeForm: $("code-form"), code: $("code"), passwordForm: $("password-form"), telegramPassword: $("telegram-password"), connectStep: $("connect-step"), connectCopy: $("connect-copy"), connectStatus: $("connect-status"),
+  phoneForm: $("phone-form"), phone: $("phone"), phoneCountryCode: $("phone-country-code"), codeForm: $("code-form"), code: $("code"), passwordForm: $("password-form"), telegramPassword: $("telegram-password"), connectStep: $("connect-step"), connectCopy: $("connect-copy"), connectStatus: $("connect-status"),
   accountList: $("account-list"), numberSearch: $("number-search"), numberStatusFilter: $("number-status-filter"), selectedProfileCard: $("selected-profile-card"),
   metricAccounts: $("metric-accounts"), metricContacts: $("metric-contacts"), metricGroups: $("metric-groups"), metricPosts: $("metric-posts"),
   quickSendForm: $("quick-send-form"), quickRecipient: $("quick-recipient"), quickMessage: $("quick-message"), quickSendButton: $("quick-send-button"), messageStatus: $("message-status"),
   profileForm: $("profile-form"), profileList: $("profile-list"), profileStatusMessage: $("profile-status-message"), applicationList: $("application-list"),
-  contactForm: $("contact-form"), contactList: $("contact-list"), contactStatus: $("contact-status"), contactSearch: $("contact-search"), contactImportJson: $("contact-import-json"),
-  inboxSearch: $("inbox-search"), inboxThreadList: $("inbox-thread-list"), inboxActiveHeading: $("inbox-active-heading"), inboxThread: $("inbox-thread"), inboxForm: $("inbox-form"), inboxMessage: $("inbox-message"), inboxSendButton: $("inbox-send-button"), inboxRefresh: $("inbox-refresh"), inboxStatus: $("inbox-status"),
+  contactForm: $("contact-form"), contactCountryCode: $("contact-country-code"), contactList: $("contact-list"), contactStatus: $("contact-status"), contactSearch: $("contact-search"), contactImportJson: $("contact-import-json"),
+  inboxSearch: $("inbox-search"), inboxShell: $("inbox-shell"), inboxViewButtons: $$(".inbox-view-control button[data-inbox-view]"), inboxThreadList: $("inbox-thread-list"), inboxActiveHeading: $("inbox-active-heading"), inboxThread: $("inbox-thread"), inboxMultiBoard: $("inbox-multi-board"), inboxForm: $("inbox-form"), inboxMessage: $("inbox-message"), inboxSendButton: $("inbox-send-button"), inboxRefresh: $("inbox-refresh"), inboxStatus: $("inbox-status"),
   groupForm: $("group-form"), groupList: $("group-list"), channelForm: $("channel-form"), channelList: $("channel-list"),
   postForm: $("post-form"), postPreview: $("post-preview"), postList: $("post-list"), postContactTargets: $("post-contact-targets"), postGroupTargets: $("post-group-targets"), postStatusMessage: $("post-status-message"), postSearch: $("post-search"), postFilterType: $("post-filter-type"), postSort: $("post-sort"),
   postHistorySent: $("post-history-sent"), postHistoryPending: $("post-history-pending"),
@@ -91,7 +132,7 @@ function profileFor(account) {
 }
 function avatar(profile, fallback) { return profile?.avatar ? `<span class="account-avatar"><img src="${esc(profile.avatar)}" alt=""></span>` : `<span class="account-avatar">${esc((fallback || "T").trim().slice(0, 1).toUpperCase())}</span>`; }
 function saveAll() { write(keys.profiles, state.profiles); write(keys.contacts, state.contacts); write(keys.groups, state.groups); write(keys.channels, state.channels); write(keys.posts, state.posts); write(keys.postHistory, state.postHistory); write(keys.settings, state.settings); }
-function selectAccount(id) { state.selected = id || ""; state.selected ? localStorage.setItem(keys.selected, state.selected) : localStorage.removeItem(keys.selected); state.inbox.messages = []; state.inbox.selectedThread = ""; render(); if (state.activeView === "inbox") void loadInboxMessages({ quiet: true }); }
+function selectAccount(id) { state.selected = id || ""; state.selected ? localStorage.setItem(keys.selected, state.selected) : localStorage.removeItem(keys.selected); state.inbox.messages = []; state.inbox.selectedThread = ""; state.inbox.lastSyncAt = 0; state.inbox.drafts = {}; render(); if (state.activeView === "inbox") void loadInboxMessages({ quiet: true }); }
 function ensureSelected() { if (!state.accounts.some((account) => account.id === state.selected)) state.selected = state.accounts[0]?.id || ""; }
 
 function renderProfileSelect() {
@@ -165,6 +206,56 @@ function renderApplications() {
   el.applicationList.innerHTML = apps.map((name, index) => `<article class="application-card"><span class="badge ${index === 0 ? "success" : ""}">${index === 0 ? "Available" : "Later"}</span><h3>${esc(name)}</h3><p class="muted">${index === 0 ? "Contacts, groups, channels, posts, and sending" : "Reserved for the same workflow shell"}</p></article>`).join("");
 }
 
+function splitContactPhone(value) {
+  const text = String(value || "").trim();
+  const digits = text.replace(/\D/g, "");
+  if (!digits) return { countryCode: "+91", localPhone: "" };
+  const normalized = text.startsWith("+") ? `+${digits}` : digits;
+  const countryCode = contactCountryCodes.slice().sort((a, b) => b.length - a.length).find((code) => normalized.startsWith(code) && normalized.length > code.length) || "+91";
+  const localPhone = normalized.startsWith(countryCode) ? normalized.slice(countryCode.length) : digits;
+  return { countryCode, localPhone };
+}
+
+function normalizeContactPhone(rawPhone, countryCode = "+91") {
+  const text = String(rawPhone || "").trim();
+  const digits = text.replace(/\D/g, "");
+  if (!digits) return "";
+  if (text.startsWith("+")) return `+${digits}`;
+  const code = contactCountryCodes.includes(countryCode) ? countryCode : "+91";
+  const countryDigits = code.replace(/\D/g, "");
+  return digits.startsWith(countryDigits) && digits.length > countryDigits.length + 6 ? `+${digits}` : `${code}${digits}`;
+}
+
+function loginPhoneFromForm() {
+  return normalizeContactPhone(el.phone.value, el.phoneCountryCode?.value || "+91");
+}
+
+function contactPhoneFromForm() {
+  return normalizeContactPhone($("contact-phone").value, el.contactCountryCode.value);
+}
+
+function clearContactForm() {
+  el.contactForm.reset();
+  $("contact-id").value = "";
+  el.contactCountryCode.value = "+91";
+}
+
+function fillContactForm(item) {
+  const phone = splitContactPhone(item.phone);
+  $("contact-id").value = item.id;
+  $("contact-name").value = item.name || "";
+  $("contact-handle").value = item.handle || "";
+  el.contactCountryCode.value = item.countryCode || phone.countryCode;
+  $("contact-phone").value = phone.localPhone;
+  $("contact-group").value = item.group || "";
+  $("contact-notes").value = item.notes || "";
+}
+
+function contactPhoneDisplay(contact) {
+  const rawPhone = String(contact?.phone || "").trim();
+  return rawPhone ? normalizeContactPhone(rawPhone, contact.countryCode || splitContactPhone(rawPhone).countryCode) || rawPhone : "";
+}
+
 function record(title, meta, body, actions) {
   return `<article class="record-item"><div><h3>${esc(title || "Untitled")}</h3><p class="record-meta">${esc(meta || "No metadata")}</p>${body ? `<p class="muted">${esc(body)}</p>` : ""}</div><div class="record-actions">${actions}</div></article>`;
 }
@@ -172,8 +263,8 @@ function empty(text) { return `<p class="empty">${esc(text)}</p>`; }
 
 function renderContacts() {
   const query = el.contactSearch.value.trim().toLowerCase();
-  const list = state.contacts.filter((item) => [item.name, item.handle, item.phone, item.group, item.notes].join(" ").toLowerCase().includes(query));
-  el.contactList.innerHTML = list.length ? list.map((item) => record(item.name, [item.handle, item.phone, item.group].filter(Boolean).join(" | "), item.notes, `<button class="mini-button" data-edit-contact="${esc(item.id)}" type="button">Edit</button><button class="mini-button" data-delete-contact="${esc(item.id)}" type="button">Delete</button>`)).join("") : empty("No contacts found.");
+  const list = state.contacts.filter((item) => [item.name, item.handle, item.countryCode, item.phone, contactPhoneDisplay(item), item.group, item.notes].join(" ").toLowerCase().includes(query));
+  el.contactList.innerHTML = list.length ? list.map((item) => record(item.name, [item.handle, contactPhoneDisplay(item), item.group].filter(Boolean).join(" | "), item.notes, `<button class="mini-button" data-edit-contact="${esc(item.id)}" type="button">Edit</button><button class="mini-button" data-delete-contact="${esc(item.id)}" type="button">Delete</button>`)).join("") : empty("No contacts found.");
 }
 function renderGroups() {
   el.groupList.innerHTML = state.groups.length ? state.groups.map((item) => record(item.name, [item.type, item.status, `${lines(item.members).length} members`].join(" | "), item.notes, `<button class="mini-button" data-edit-group="${esc(item.id)}" type="button">Edit</button><button class="mini-button" data-delete-group="${esc(item.id)}" type="button">Delete</button>`)).join("") : empty("No groups saved.");
@@ -206,7 +297,12 @@ function groupRecipients(group) {
     return true;
   });
 }
-function contactRecipient(contact) { return recipientFromGroupLine(contact?.handle || contact?.phone || ""); }
+function contactRecipient(contact) {
+  const handle = recipientFromGroupLine(contact?.handle || "");
+  if (handle) return handle;
+  const rawPhone = String(contact?.phone || "").trim();
+  return normalizeContactPhone(rawPhone, contact?.countryCode || "+91") || recipientFromGroupLine(rawPhone);
+}
 function postTargets(post) {
   const rows = [];
   const seen = new Set();
@@ -345,16 +441,48 @@ function renderSearch() {
 function recipientKey(value) {
   return recipientFromGroupLine(value || "").trim().toLowerCase();
 }
+function recipientKeys(value) {
+  return String(value || "").split(/[\s,|]+/).map(recipientKey).filter(Boolean);
+}
 function contactKeys(contact) {
-  return [contactRecipient(contact), contact?.handle || "", contact?.phone || ""].map(recipientKey).filter(Boolean);
+  return [
+    contactRecipient(contact),
+    contact?.handle || "",
+    contact?.phone || "",
+    normalizeContactPhone(contact?.phone || "", contact?.countryCode || "+91")
+  ].flatMap(recipientKeys).filter(Boolean);
+}
+function messageRecipientKeys(message) {
+  return recipientKeys(message?.recipient || "");
 }
 function messageRecipientKey(message) {
-  return recipientKey(message?.recipient || "");
+  return messageRecipientKeys(message)[0] || "";
+}
+function messageIdentity(message) {
+  return [message?.direction || "", message?.telegramMessageId || message?.id || "", message?.text || ""].join("|");
+}
+function dedupeThreadMessages(messages) {
+  const seen = new Set();
+  return messages.filter((message) => {
+    const key = messageIdentity(message);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 function messageMatchesContact(message, contact) {
-  const key = messageRecipientKey(message);
-  return !!key && contactKeys(contact).includes(key);
+  const keys = new Set(messageRecipientKeys(message));
+  return contactKeys(contact).some((key) => keys.has(key));
 }
+function contactStartedAt(contact) {
+  const time = new Date(contact?.createdAt || contact?.updatedAt || 0).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+function contactThreadMessages(messages, contact) {
+  const startedAt = contactStartedAt(contact);
+  return dedupeThreadMessages(messages.filter((message) => messageMatchesContact(message, contact) && (!startedAt || messageTime(message) >= startedAt)));
+}
+
 function contactThreadId(contact) {
   return `contact:${contact.id}`;
 }
@@ -368,11 +496,9 @@ function messageTime(message) {
 function inboxThreads() {
   const messages = state.inbox.messages || [];
   const query = (el.inboxSearch?.value || "").trim().toLowerCase();
-  const used = new Set();
   const threads = state.contacts.map((contact) => {
     const recipient = contactRecipient(contact);
-    const threadMessages = messages.filter((message) => messageMatchesContact(message, contact));
-    threadMessages.forEach((message) => used.add(message.id));
+    const threadMessages = contactThreadMessages(messages, contact);
     const latest = threadMessages.slice().sort((a, b) => messageTime(b) - messageTime(a))[0] || null;
     return {
       id: contactThreadId(contact),
@@ -385,17 +511,7 @@ function inboxThreads() {
     };
   });
 
-  const unknown = new Map();
-  for (const message of messages) {
-    if (used.has(message.id)) continue;
-    const key = messageRecipientKey(message);
-    if (!key) continue;
-    const existing = unknown.get(key) || { id: peerThreadId(key), key, label: message.recipient || key, recipient: message.recipient || key, detail: "Telegram chat", latest: null, contact: null };
-    if (!existing.latest || messageTime(message) > messageTime(existing.latest)) existing.latest = message;
-    unknown.set(key, existing);
-  }
-
-  const rows = [...threads, ...unknown.values()].filter((thread) => {
+  const rows = threads.filter((thread) => {
     const searchText = [thread.label, thread.recipient, thread.detail, thread.latest?.text].join(" ").toLowerCase();
     return !query || searchText.includes(query);
   }).sort((a, b) => {
@@ -408,24 +524,102 @@ function inboxThreads() {
   }
   return rows;
 }
+
 function currentInboxThread() {
   return inboxThreads().find((thread) => thread.id === state.inbox.selectedThread) || null;
 }
 function messagesForThread(thread) {
   if (!thread) return [];
-  return (state.inbox.messages || []).filter((message) => thread.contact ? messageMatchesContact(message, thread.contact) : messageRecipientKey(message) === thread.key).slice().sort((a, b) => messageTime(a) - messageTime(b));
+  return (thread.contact ? contactThreadMessages(state.inbox.messages || [], thread.contact) : dedupeThreadMessages((state.inbox.messages || []).filter((message) => messageRecipientKey(message) === thread.key))).slice().sort((a, b) => messageTime(a) - messageTime(b));
+}
+function addInboxMessage(message) {
+  if (!message?.id) return;
+  state.inbox.messages = [message, ...(state.inbox.messages || []).filter((item) => item.id !== message.id)];
 }
 function shortMessageTime(value) {
   const date = new Date(value);
   return value && !Number.isNaN(date.getTime()) ? date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 }
+function renderInboxMessageBubble(message, inboundLabel = "Reply") {
+  const direction = message.direction === "outbound" ? "outbound" : "inbound";
+  const speaker = direction === "outbound" ? "You" : inboundLabel;
+  return `<article class="message-bubble ${direction}"><p>${esc(message.text || "")}</p><div class="message-meta"><span>${esc(speaker)}</span><span>${esc(shortMessageTime(message.createdAt))}</span></div></article>`;
+}
+function renderMultiChatBoard(threads) {
+  if (!el.inboxMultiBoard) return;
+  el.inboxMultiBoard.innerHTML = threads.length ? threads.map((thread) => {
+    const messages = messagesForThread(thread).slice(-12);
+    const active = thread.id === state.inbox.selectedThread ? " active" : "";
+    const detail = thread.detail || thread.recipient || "No recipient saved";
+    const canSend = !!thread.recipient && !state.inbox.loading;
+    const disabled = canSend ? "" : " disabled";
+    const draft = state.inbox.drafts?.[thread.id] || "";
+    const placeholder = thread.recipient ? `Message ${thread.label}` : "Add username or phone first";
+    const body = messages.length ? messages.map((message) => renderInboxMessageBubble(message, thread.label)).join("") : empty(thread.recipient ? "No messages yet." : "Add a username or phone to send.");
+    return `<article class="multi-chat-column${active}"><header class="multi-chat-heading"><button class="multi-chat-title" type="button" data-inbox-thread="${esc(thread.id)}"><span>${esc(thread.label)}</span><small>${esc(shortMessageTime(thread.latest?.createdAt || ""))}</small></button><p>${esc(detail)}</p></header><div class="multi-chat-messages">${body}</div><form class="multi-chat-composer" data-inbox-quick-form="${esc(thread.id)}" novalidate><textarea data-inbox-draft="${esc(thread.id)}" rows="1" maxlength="4096" placeholder="${esc(placeholder)}"${disabled}>${esc(draft)}</textarea><button class="mini-button" type="submit"${disabled}>Send</button></form></article>`;
+  }).join("") : empty("No saved contacts or messages yet.");
+  requestAnimationFrame(() => {
+    el.inboxMultiBoard.querySelectorAll(".multi-chat-messages").forEach((node) => { node.scrollTop = node.scrollHeight; });
+  });
+}
+async function sendInboxThreadMessage(threadId, messageInput) {
+  const thread = inboxThreads().find((item) => item.id === threadId) || currentInboxThread();
+  const text = String(messageInput?.value ?? messageInput ?? "").trim();
+  if (!thread) return status(el.inboxStatus, "Select a chat first.", "error");
+  if (!thread.recipient) return status(el.inboxStatus, "Add a username or phone to this contact before sending.", "error");
+  if (!text) return status(el.inboxStatus, "Type a message first.", "error");
+  state.inbox.selectedThread = thread.id;
+  if (messageInput?.dataset?.inboxDraft) state.inbox.drafts[thread.id] = text;
+  const form = messageInput?.closest?.("form");
+  const controls = form ? Array.from(form.querySelectorAll("textarea, button")) : [el.inboxMessage, el.inboxSendButton].filter(Boolean);
+  controls.forEach((control) => { control.disabled = true; });
+  status(el.inboxStatus, `Sending to ${thread.label}...`);
+  try {
+    const response = await sendMessage(thread.recipient, text, el.inboxStatus, currentAccount()?.id || "", { firstName: thread.contact?.name || thread.label });
+    addInboxMessage(response?.message);
+    if (messageInput && "value" in messageInput) messageInput.value = "";
+    delete state.inbox.drafts[thread.id];
+    renderInbox();
+    await loadInboxMessages({ quiet: true });
+    status(el.inboxStatus, "Message sent.", "success");
+  } catch (error) {
+    onError(error, el.inboxStatus);
+  } finally {
+    renderInbox();
+  }
+}
+function validInboxView(view) {
+  return Object.prototype.hasOwnProperty.call(inboxViewLabels, view) ? view : "split";
+}
+function setInboxView(view) {
+  state.inbox.view = validInboxView(view);
+  localStorage.setItem(keys.inboxView, state.inbox.view);
+  renderInbox();
+  status(el.inboxStatus, `${inboxViewLabels[state.inbox.view]} view active.`, "success");
+}
+function renderInboxViewControls() {
+  const view = validInboxView(state.inbox.view);
+  state.inbox.view = view;
+  if (el.inboxShell) {
+    el.inboxShell.dataset.view = view;
+    el.inboxShell.setAttribute("aria-label", `${inboxViewLabels[view]} message view`);
+  }
+  el.inboxViewButtons.forEach((button) => {
+    const active = button.dataset.inboxView === view;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.title = `${inboxViewLabels[button.dataset.inboxView] || "Message"} view`;
+  });
+}
 function renderInbox() {
-  if (!el.inboxThreadList || !el.inboxThread || !el.inboxActiveHeading) return;
+  if (!el.inboxThreadList || !el.inboxThread || !el.inboxActiveHeading || !el.inboxMultiBoard) return;
+  renderInboxViewControls();
   const account = currentAccount();
   if (!account) {
     el.inboxThreadList.innerHTML = empty("Connect and select a Telegram profile first.");
     el.inboxActiveHeading.innerHTML = "<h3>No profile selected</h3><p class=\"muted\">Add a number before opening chats.</p>";
     el.inboxThread.innerHTML = "";
+    el.inboxMultiBoard.innerHTML = "";
     el.inboxSendButton.disabled = true;
     el.inboxMessage.disabled = true;
     return;
@@ -437,6 +631,7 @@ function renderInbox() {
     const preview = thread.latest?.text || (thread.recipient ? "No messages yet" : "Telegram chat");
     return `<button class="chat-thread-button${active}" type="button" data-inbox-thread="${esc(thread.id)}"><div class="chat-thread-title"><span>${esc(thread.label)}</span><span class="chat-thread-time">${esc(shortMessageTime(thread.latest?.createdAt || ""))}</span></div><div class="chat-thread-meta">${esc(thread.detail || thread.recipient || "No recipient saved")}</div><div class="chat-thread-preview">${esc(preview)}</div></button>`;
   }).join("") : empty("No saved contacts or messages yet.");
+  renderMultiChatBoard(threads);
 
   const thread = currentInboxThread();
   const canSend = !!thread?.recipient;
@@ -451,10 +646,7 @@ function renderInbox() {
 
   el.inboxActiveHeading.innerHTML = `<h3>${esc(thread.label)}</h3><p class="muted">${esc(thread.detail || thread.recipient || "Add a username or phone to this contact before sending.")}</p>`;
   const messages = messagesForThread(thread);
-  el.inboxThread.innerHTML = messages.length ? messages.map((message) => {
-    const direction = message.direction === "outbound" ? "outbound" : "inbound";
-    return `<article class="message-bubble ${direction}"><p>${esc(message.text || "")}</p><div class="message-meta"><span>${direction === "outbound" ? "Sent" : "Reply"}</span><span>${esc(shortMessageTime(message.createdAt))}</span></div></article>`;
-  }).join("") : empty(canSend ? "No messages yet. Type below to start this chat." : "This contact needs a username or phone before you can send.");
+  el.inboxThread.innerHTML = messages.length ? messages.map((message) => renderInboxMessageBubble(message, thread.label)).join("") : empty(canSend ? "No messages yet. Type below to start this chat." : "This contact needs a username or phone before you can send.");
   requestAnimationFrame(() => { el.inboxThread.scrollTop = el.inboxThread.scrollHeight; });
 }
 async function loadInboxMessages(options = {}) {
@@ -466,9 +658,11 @@ async function loadInboxMessages(options = {}) {
   if (!options.quiet) status(el.inboxStatus, "Loading inbox...");
   renderInbox();
   try {
-    const data = await api(`/v1/messages?accountId=${encodeURIComponent(account.id)}&limit=500`);
+    const query = new URLSearchParams({ accountId: account.id, limit: "500" });
+    const data = await api(`/v1/messages?${query.toString()}`);
     state.inbox.messages = Array.isArray(data.messages) ? data.messages : [];
-    if (!options.quiet) status(el.inboxStatus, "Inbox is up to date.", "success");
+    state.inbox.lastSyncAt = Date.now();
+    if (!options.quiet) status(el.inboxStatus, "Messages are up to date.", "success");
   } catch (error) {
     onError(error, el.inboxStatus);
   } finally {
@@ -578,7 +772,7 @@ function setLoginStage(stage) {
   el.connectCopy.textContent = isPhone ? "Use the full phone number with country code. Telegram will deliver a verification code." : isCode ? "Enter the code Telegram sent. It is used once and is not saved by this page." : "This Telegram account uses two-factor authentication. Enter its password to finish connecting.";
   if (isCode) el.code.focus(); if (isPassword) el.telegramPassword.focus();
 }
-async function completeConnection(data) { resetLogin(); el.phone.value = ""; await loadAccounts(); selectAccount(data.account.id); status(el.connectStatus, `${data.account.displayName} is connected and ready to use.`, "success"); }
+async function completeConnection(data) { resetLogin(); el.phone.value = ""; if (el.phoneCountryCode) el.phoneCountryCode.value = "+91"; await loadAccounts(); selectAccount(data.account.id); status(el.connectStatus, `${data.account.displayName} is connected and ready to use.`, "success"); }
 
 el.passwordSignInForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -604,8 +798,8 @@ el.profileSelect.addEventListener("change", () => selectAccount(el.profileSelect
 
 el.phoneForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const phone = el.phone.value.trim();
-  if (!phone) return status(el.connectStatus, "Enter a phone number with country code.", "error");
+  const phone = loginPhoneFromForm();
+  if (!phone) return status(el.connectStatus, "Enter a phone number.", "error");
   busy(el.phoneForm, true); status(el.connectStatus, "Asking Telegram to send a verification code...");
   try { const data = await api("/v1/telegram/login/start", { method: "POST", body: { phone } }); state.login.challengeId = data.challengeId; setLoginStage("code"); status(el.connectStatus, `A code was sent through ${data.codeDelivery === "sms" ? "SMS" : "the Telegram app"}.`, "success"); }
   catch (error) { onError(error, el.connectStatus); }
@@ -647,9 +841,12 @@ el.quickSendForm.addEventListener("submit", async (event) => {
 el.contactForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = $("contact-name").value.trim(); if (!name) return status(el.contactStatus, "Contact name is required.", "error");
-  const item = { id: $("contact-id").value || uid("contact"), name, handle: $("contact-handle").value.trim(), phone: $("contact-phone").value.trim(), group: $("contact-group").value.trim(), notes: $("contact-notes").value.trim(), updatedAt: new Date().toISOString() };
+  const existingId = $("contact-id").value;
+  const existing = state.contacts.find((row) => row.id === existingId);
+  const now = new Date().toISOString();
+  const item = { id: existingId || uid("contact"), name, handle: $("contact-handle").value.trim(), countryCode: el.contactCountryCode.value || "+91", phone: contactPhoneFromForm(), group: $("contact-group").value.trim(), notes: $("contact-notes").value.trim(), createdAt: existing?.createdAt || now, updatedAt: now };
   const index = state.contacts.findIndex((row) => row.id === item.id); index === -1 ? state.contacts.unshift(item) : state.contacts[index] = item;
-  write(keys.contacts, state.contacts); el.contactForm.reset(); $("contact-id").value = ""; render(); status(el.contactStatus, "Contact saved.", "success");
+  write(keys.contacts, state.contacts); clearContactForm(); render(); status(el.contactStatus, "Contact saved.", "success");
 });
 el.groupForm.addEventListener("submit", (event) => {
   event.preventDefault(); const name = $("group-name").value.trim(); if (!name) return;
@@ -673,23 +870,7 @@ el.inboxSearch.addEventListener("input", renderInbox);
 el.inboxRefresh.addEventListener("click", () => void loadInboxMessages());
 el.inboxForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const thread = currentInboxThread();
-  const text = el.inboxMessage.value.trim();
-  if (!thread) return status(el.inboxStatus, "Select a chat first.", "error");
-  if (!thread.recipient) return status(el.inboxStatus, "Add a username or phone to this contact before sending.", "error");
-  if (!text) return status(el.inboxStatus, "Type a message first.", "error");
-  el.inboxSendButton.disabled = true;
-  status(el.inboxStatus, `Sending to ${thread.label}...`);
-  try {
-    await sendMessage(thread.recipient, text, el.inboxStatus, currentAccount()?.id || "", { firstName: thread.contact?.name || thread.label });
-    el.inboxMessage.value = "";
-    await loadInboxMessages({ quiet: true });
-    status(el.inboxStatus, "Message sent.", "success");
-  } catch (error) {
-    onError(error, el.inboxStatus);
-  } finally {
-    renderInbox();
-  }
+  await sendInboxThreadMessage(state.inbox.selectedThread, el.inboxMessage);
 });
 el.postSearch.addEventListener("input", renderPosts); el.postFilterType.addEventListener("change", renderPosts); el.postSort.addEventListener("change", renderPosts);
 el.globalSearch.addEventListener("input", renderSearch);
@@ -700,19 +881,32 @@ $("settings-form").addEventListener("submit", (event) => {
   write(keys.settings, state.settings); applyTheme(); status(el.settingsStatus, "Settings saved.", "success");
 });
 
+document.addEventListener("input", (event) => {
+  const textarea = event.target.closest?.("textarea[data-inbox-draft]");
+  if (!textarea) return;
+  state.inbox.drafts[textarea.dataset.inboxDraft] = textarea.value;
+});
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest?.("form[data-inbox-quick-form]");
+  if (!form) return;
+  event.preventDefault();
+  await sendInboxThreadMessage(form.dataset.inboxQuickForm, form.querySelector("textarea"));
+});
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   if (button.dataset.view) setView(button.dataset.view);
   if (button.dataset.jump) setView(button.dataset.jump);
+  if (button.dataset.inboxView) setInboxView(button.dataset.inboxView);
   if (button.dataset.resetLogin !== undefined) resetLogin();
-  if (button.id === "contact-clear") { el.contactForm.reset(); $("contact-id").value = ""; }
+  if (button.id === "contact-clear") clearContactForm();
   if (button.id === "group-clear") { el.groupForm.reset(); $("group-id").value = ""; }
   if (button.id === "channel-clear") { el.channelForm.reset(); $("channel-id").value = ""; }
   if (button.id === "post-clear") clearPost();
   if (button.id === "export-contacts") { el.contactImportJson.value = JSON.stringify(state.contacts, null, 2); status(el.contactStatus, "Contacts exported.", "success"); }
   if (button.id === "import-contacts") {
-    try { const parsed = JSON.parse(el.contactImportJson.value || "[]"); if (!Array.isArray(parsed)) throw new Error("Contact JSON must be an array."); state.contacts = parsed.map((item) => ({ ...item, id: item.id || uid("contact") })); write(keys.contacts, state.contacts); render(); status(el.contactStatus, "Contacts imported.", "success"); }
+    try { const parsed = JSON.parse(el.contactImportJson.value || "[]"); if (!Array.isArray(parsed)) throw new Error("Contact JSON must be an array."); state.contacts = parsed.map((item) => ({ ...item, id: item.id || uid("contact"), countryCode: item.countryCode || splitContactPhone(item.phone).countryCode, createdAt: item.createdAt || item.updatedAt || new Date().toISOString(), updatedAt: item.updatedAt || item.createdAt || new Date().toISOString() })); write(keys.contacts, state.contacts); render(); status(el.contactStatus, "Contacts imported.", "success"); }
     catch (error) { status(el.contactStatus, error instanceof Error ? error.message : "Import failed.", "error"); }
   }
   if (button.id === "post-schedule") { if (!$("post-scheduled-at").value) return status(el.postStatusMessage, "Choose a scheduled date.", "error"); savePost("Scheduled"); status(el.postStatusMessage, "Post saved as scheduled.", "success"); }
@@ -732,11 +926,11 @@ document.addEventListener("click", async (event) => {
     try { const data = JSON.parse(el.backupJson.value || "{}"); state.profiles = data.profiles && typeof data.profiles === "object" ? data.profiles : state.profiles; state.contacts = Array.isArray(data.contacts) ? data.contacts : state.contacts; state.groups = Array.isArray(data.groups) ? data.groups : state.groups; state.channels = Array.isArray(data.channels) ? data.channels : state.channels; state.posts = Array.isArray(data.posts) ? data.posts : state.posts; state.postHistory = Array.isArray(data.postHistory) ? data.postHistory : state.postHistory; state.settings = data.settings && typeof data.settings === "object" ? { ...state.settings, ...data.settings } : state.settings; saveAll(); applyTheme(); render(); status(el.backupStatus, "Backup restored.", "success"); }
     catch (error) { status(el.backupStatus, error instanceof Error ? error.message : "Restore failed.", "error"); }
   }
-  const inboxThread = button.dataset.inboxThread; if (inboxThread) { state.inbox.selectedThread = inboxThread; renderInbox(); }
+  const inboxThread = button.dataset.inboxThread; if (inboxThread) { state.inbox.selectedThread = inboxThread; renderInbox(); if (state.inbox.view === "multi") requestAnimationFrame(() => el.inboxMultiBoard?.querySelector(".multi-chat-column.active textarea:not(:disabled)")?.focus()); }
   const accountId = button.dataset.selectAccount; if (accountId) selectAccount(accountId);
   const editAccount = button.dataset.editAccount; if (editAccount) { selectAccount(editAccount); setView("profiles"); }
   const deleteAccountId = button.dataset.deleteAccount; if (deleteAccountId) { const account = state.accounts.find((item) => item.id === deleteAccountId); if (account) { try { await deleteAccount(account); status(el.messageStatus, "Profile deleted.", "success"); } catch (error) { onError(error, el.messageStatus); } } }
-  const editContact = button.dataset.editContact; if (editContact) { const item = state.contacts.find((row) => row.id === editContact); if (item) { $("contact-id").value = item.id; $("contact-name").value = item.name || ""; $("contact-handle").value = item.handle || ""; $("contact-phone").value = item.phone || ""; $("contact-group").value = item.group || ""; $("contact-notes").value = item.notes || ""; } }
+  const editContact = button.dataset.editContact; if (editContact) { const item = state.contacts.find((row) => row.id === editContact); if (item) fillContactForm(item); }
   const deleteContact = button.dataset.deleteContact; if (deleteContact) { state.contacts = state.contacts.filter((row) => row.id !== deleteContact); write(keys.contacts, state.contacts); render(); }
   const editGroup = button.dataset.editGroup; if (editGroup) { const item = state.groups.find((row) => row.id === editGroup); if (item) { $("group-id").value = item.id; $("group-name").value = item.name || ""; $("group-type").value = item.type || "Private"; $("group-status").value = item.status || "Created"; $("group-members").value = item.members || ""; $("group-notes").value = item.notes || ""; } }
   const deleteGroup = button.dataset.deleteGroup; if (deleteGroup) { state.groups = state.groups.filter((row) => row.id !== deleteGroup); write(keys.groups, state.groups); render(); }

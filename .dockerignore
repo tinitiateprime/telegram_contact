@@ -1,0 +1,16 @@
+node_modules
+dist
+logs
+postgres_data
+.git
+.agents
+.codex
+.tmp
+.env
+.env.*
+!.env.example
+!.env.docker.example
+.session
+*.session
+.dev-server*.log
+npm-debug.log*

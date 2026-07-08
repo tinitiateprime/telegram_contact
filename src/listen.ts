@@ -15,7 +15,8 @@ async function main() {
           direction: "inbound",
           recipient: message.senderRef || message.senderId || message.chatId,
           text: message.text,
-          telegramMessageId: message.messageId
+          telegramMessageId: message.messageId,
+          createdAt: message.createdAt
         });
       });
       console.log(`Listening for ${account.displayName} (${account.id}).`);

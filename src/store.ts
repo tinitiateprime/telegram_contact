@@ -34,6 +34,18 @@ export type MessageRecord = {
   createdAt: string;
 };
 
+type MessageRecordInput = Omit<MessageRecord, "id" | "createdAt"> & { createdAt?: Date | string };
+
+type MessageRow = {
+  id: string;
+  account_id: string;
+  direction: "inbound" | "outbound";
+  recipient_ciphertext: string;
+  text_ciphertext: string;
+  telegram_message_id: string;
+  created_at: Date;
+};
+
 type AccountRow = {
   id: string;
   telegram_user_id: string;
@@ -120,6 +132,8 @@ export class MultiUserStore {
       );
       CREATE INDEX IF NOT EXISTS telegram_messages_account_id_created_at_idx
         ON telegram_messages(account_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS telegram_messages_account_id_direction_message_id_idx
+        ON telegram_messages(account_id, direction, telegram_message_id);
     `);
   }
 
@@ -302,22 +316,39 @@ export class MultiUserStore {
     return account;
   }
 
-  async recordMessage(input: Omit<MessageRecord, "id" | "createdAt">): Promise<MessageRecord> {
-    const id = randomUUID();
-    const result = await this.pool.query<{ created_at: Date }>(
-      `INSERT INTO telegram_messages
-        (id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING created_at`,
-      [id, input.accountId, input.direction, this.cipher.encrypt(input.recipient), this.cipher.encrypt(input.text), input.telegramMessageId]
+  async recordMessage(input: MessageRecordInput): Promise<MessageRecord> {
+    const existing = await this.pool.query<MessageRow>(
+      `SELECT id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id, created_at
+       FROM telegram_messages
+       WHERE account_id = $1 AND direction = $2 AND telegram_message_id = $3
+       ORDER BY created_at ASC LIMIT 25`,
+      [input.accountId, input.direction, input.telegramMessageId]
     );
-    return { ...input, id, createdAt: asIso(result.rows[0].created_at) };
-  }
+    const duplicate = existing.rows.find((row) => this.cipher.decrypt(row.recipient_ciphertext) === input.recipient);
+    if (duplicate) return this.toMessageRecord(duplicate);
 
+    const id = randomUUID();
+    const createdAt = input.createdAt ? new Date(input.createdAt) : null;
+    const createdAtParam = createdAt && Number.isFinite(createdAt.getTime()) ? createdAt : null;
+    const result = await this.pool.query<MessageRow>(
+      `INSERT INTO telegram_messages
+        (id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
+       RETURNING id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id, created_at`,
+      [
+        id,
+        input.accountId,
+        input.direction,
+        this.cipher.encrypt(input.recipient),
+        this.cipher.encrypt(input.text),
+        input.telegramMessageId,
+        createdAtParam
+      ]
+    );
+    return this.toMessageRecord(result.rows[0]);
+  }
   async listMessages(userId: string, accountId: string, limit = 50): Promise<MessageRecord[]> {
-    const result = await this.pool.query<{
-      id: string; account_id: string; direction: "inbound" | "outbound"; recipient_ciphertext: string;
-      text_ciphertext: string; telegram_message_id: string; created_at: Date;
-    }>(
+    const result = await this.pool.query<MessageRow>(
       `SELECT messages.id, messages.account_id, messages.direction, messages.recipient_ciphertext,
               messages.text_ciphertext, messages.telegram_message_id, messages.created_at
        FROM telegram_messages AS messages
@@ -326,13 +357,8 @@ export class MultiUserStore {
        ORDER BY messages.created_at DESC LIMIT $3`,
       [accountId, userId, Math.min(Math.max(limit, 1), 100)]
     );
-    return result.rows.map((row) => ({
-      id: row.id, accountId: row.account_id, direction: row.direction,
-      recipient: this.cipher.decrypt(row.recipient_ciphertext), text: this.cipher.decrypt(row.text_ciphertext),
-      telegramMessageId: row.telegram_message_id, createdAt: asIso(row.created_at)
-    }));
+    return result.rows.map((row) => this.toMessageRecord(row));
   }
-
   private toAccount(row: AccountRow): TelegramAccount {
     return {
       id: row.id, telegramUserId: row.telegram_user_id, displayName: row.display_name,
@@ -342,5 +368,17 @@ export class MultiUserStore {
 
   private toAccountWithSession(row: AccountRow): TelegramAccountWithSession {
     return { ...this.toAccount(row), sessionString: this.cipher.decrypt(row.session_ciphertext) };
+  }
+
+  private toMessageRecord(row: MessageRow): MessageRecord {
+    return {
+      id: row.id,
+      accountId: row.account_id,
+      direction: row.direction,
+      recipient: this.cipher.decrypt(row.recipient_ciphertext),
+      text: this.cipher.decrypt(row.text_ciphertext),
+      telegramMessageId: row.telegram_message_id,
+      createdAt: asIso(row.created_at)
+    };
   }
 }

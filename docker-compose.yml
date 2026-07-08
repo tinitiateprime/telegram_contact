@@ -1,0 +1,36 @@
+services:
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://telegram_app:telegram_local_password@db:5432/telegram_multiuser
+      SERVICE_HOST: 0.0.0.0
+      SERVICE_PORT: 8787
+      SESSION_COOKIE_SECURE: "false"
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: telegram_app
+      POSTGRES_PASSWORD: telegram_local_password
+      POSTGRES_DB: telegram_multiuser
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telegram_app -d telegram_multiuser"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+  
