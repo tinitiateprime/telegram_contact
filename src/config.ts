@@ -81,6 +81,9 @@ export function readConfig(): AppConfig {
   if (!Number.isInteger(telegramApiId) || telegramApiId <= 0) {
     throw new Error("TELEGRAM_API_ID must be a positive integer.");
   }
+  const servicePort = process.env.SERVICE_PORT?.trim()
+    ? positiveInteger("SERVICE_PORT", 8787)
+    : positiveInteger("PORT", 8787);
 
   return {
     telegramApiId,
@@ -88,8 +91,8 @@ export function readConfig(): AppConfig {
     databaseUrl: requiredEnv("DATABASE_URL"),
     sessionEncryptionKey: requiredEnv("SESSION_ENCRYPTION_KEY"),
     userProvisioningKey: requiredEnv("USER_PROVISIONING_KEY"),
-    serviceHost: optionalEnv("SERVICE_HOST", "127.0.0.1"),
-    servicePort: positiveInteger("SERVICE_PORT", 8787),
+    serviceHost: optionalEnv("SERVICE_HOST", process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
+    servicePort,
     corsOrigin: optionalEnv("CORS_ORIGIN"),
     loginChallengeTtlMinutes: positiveInteger("LOGIN_CHALLENGE_TTL_MINUTES", 10),
     appSessionTtlHours: positiveInteger("APP_SESSION_TTL_HOURS", 24),
