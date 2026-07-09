@@ -2,13 +2,23 @@
 
 This project is a local Node.js/TypeScript application for connecting one or more Telegram user accounts, sending messages from the selected account, saving workflow data in the browser workspace, and storing Telegram sessions/messages securely in an encrypted local JSON datastore.
 
-The important idea:
+The current flow:
 
 ```text
-Browser dashboard -> local backend API -> encrypted per-account Telegram session -> Telegram
+Developer runs npm run server
+-> Node.js serves the dashboard at http://127.0.0.1:8787
+-> User opens the dashboard in a browser
+-> User signs in with the configured local username/password
+-> User enters a Telegram phone number
+-> Telegram sends an OTP/login code to that Telegram account
+-> User enters the OTP in this dashboard
+-> The app stores the encrypted Telegram session in data/store.json
+-> Future sends use the selected saved Telegram account/session
 ```
 
 The Telegram API ID and API Hash belong to the server application. They stay in `.env`. Each connected phone number creates its own encrypted Telegram session in `data/store.json`, so one phone number is never reused as another sender.
+
+No PostgreSQL, Supabase, pgAdmin, or separate database server is required. Backend data is stored in the local encrypted JSON datastore at `data/store.json`. The application UI opens in the browser, while VS Code is only used for editing/running the project.
 
 ## What You Can Do
 
@@ -179,7 +189,13 @@ npm run server
 npm run listen
 ```
 
-Then use the browser at `http://127.0.0.1:8787`
+Then use the browser at:
+
+```text
+http://127.0.0.1:8787
+```
+
+The app does not open inside VS Code. VS Code is only the editor/terminal. The dashboard itself opens in Chrome, Edge, Firefox, or another browser.
 
 If frontend files changed, restart `npm run server` and hard refresh the browser with `Ctrl + F5`.
 
@@ -231,6 +247,59 @@ docker compose down -v
 The Docker setup stores backend JSON data in `./data/store.json`. Delete `./data` only when you intentionally want to remove connected Telegram sessions, app users, browser sessions, and backend message history.
 
 If port `8787` is already in use, stop your local `npm run server` process first or change the host port in `docker-compose.yml` from `8787:8787` to another host port, for example `8788:8787`.
+
+## GitHub Handoff Workflow
+
+When pushing this project to GitHub, commit the code and templates, but never commit local secrets or stored Telegram sessions.
+
+Safe to commit:
+
+```text
+src/
+public/
+config/
+docs/
+package.json
+package-lock.json
+README.md
+.env.example
+.env.docker.example
+docker-compose.yml
+Dockerfile
+tsconfig.json
+```
+
+Do not commit:
+
+```text
+.env
+.env.docker
+data/store.json
+node_modules/
+logs/
+```
+
+These local files are ignored by `.gitignore`. `data/store.json` contains encrypted Telegram sessions and should stay private to the machine/user that connected those Telegram accounts.
+
+A new developer should run:
+
+```bash
+git clone YOUR_REPO_URL
+cd contact-telegram
+npm install
+```
+
+Then copy `.env.example` to `.env`, fill Telegram API credentials and generated keys, run the app, and open the browser URL:
+
+```bash
+npm run server
+```
+
+```text
+http://127.0.0.1:8787
+```
+
+Because `data/store.json` is not pushed, the new developer starts with a fresh datastore and must connect their own Telegram number with OTP.
 
 ## Browser Dashboard Guide
 
@@ -728,6 +797,7 @@ Change `SERVICE_PORT` in `.env`, then restart `npm run server`.
 - Add backups for `data/store.json` and exported workspace JSON where needed.
 - Add monitoring, structured logs, retries, abuse controls, and alerting.
 - Respect Telegram rate limits, user consent, privacy rules, and data-retention obligations.
+
 
 
 
