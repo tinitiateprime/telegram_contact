@@ -13,7 +13,9 @@ async function main() {
         await store.recordMessage({
           accountId: account.id,
           direction: "inbound",
-          recipient: message.senderRef || message.senderId || message.chatId,
+          recipient: message.isPrivate
+            ? message.senderRef || message.senderId || message.chatId
+            : message.chatRef || message.chatId || message.senderRef,
           text: message.text,
           telegramMessageId: message.messageId,
           createdAt: message.createdAt

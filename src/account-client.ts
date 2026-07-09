@@ -38,8 +38,10 @@ export type SentMessage = {
 
 export type IncomingTelegramMessage = {
   chatId: string;
+  chatRef: string;
   senderId: string;
   senderRef: string;
+  isPrivate: boolean;
   messageId: string;
   text: string;
   createdAt: string;
@@ -389,19 +391,23 @@ export async function listenForAccount(
   await client.getMe();
   client.addEventHandler(async (event: unknown) => {
     const message = (event as { message?: Api.Message }).message;
-    if (!message || message.out || (message as { isPrivate?: boolean }).isPrivate === false) return;
+    if (!message || message.out) return;
     try {
       const sender = await message.getSender();
+      const chat = await message.getChat().catch(() => null);
+      const isPrivate = (message as { isPrivate?: boolean }).isPrivate !== false;
       await onIncomingMessage({
         chatId: message.chatId?.toString() ?? "",
+        chatRef: peerReference(chat),
         senderId: sender instanceof Api.User ? sender.id.toString() : "",
         senderRef: senderReference(sender),
+        isPrivate,
         messageId: message.id?.toString() ?? "",
         text: telegramMessageText(message),
         createdAt: telegramMessageDate(message)
       });
     } catch (error) {
-      console.error("Unable to save an incoming Telegram message.");
+      console.error(`Unable to save an incoming Telegram message: ${errorMessage(error)}`);
     }
   }, new NewMessage({ incoming: true }));
   return client;

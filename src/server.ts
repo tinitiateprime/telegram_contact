@@ -9,12 +9,13 @@ import {
   revokeTelegramSession,
   sendTelegramMessage,
   listenForAccount,
+  fetchRecentTelegramMessages,
   normalizePhone
 } from "./account-client.ts";
 import { readConfig, type AppConfig } from "./config.ts";
 import { configuredLoginId, findConfiguredLoginUser, readConfiguredLoginUsers, type ConfiguredLoginUser } from "./login-config.ts";
 import { RequestRateLimiter } from "./rate-limit.ts";
-import { AccountAlreadyLinkedError, type AppUser, MultiUserStore, type TelegramAccountWithSession } from "./store.ts";
+import { AccountAlreadyLinkedError, type AppUser, type MessageRecord, MultiUserStore, type TelegramAccountWithSession } from "./store.ts";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonBody = Record<string, unknown>;
@@ -38,6 +39,10 @@ type TelegramListenerClient = Awaited<ReturnType<typeof listenForAccount>>;
 
 const telegramListeners = new Map<string, TelegramListenerClient>();
 const startingTelegramListeners = new Map<string, Promise<void>>();
+const recentHistorySyncs = new Map<string, Promise<void>>();
+const recentHistorySyncStartedAt = new Map<string, number>();
+const recentHistorySyncIntervalMs = 45_000;
+const recentHistorySyncTargetLimit = 50;
 const secretEnvironmentNames = [
   "TELEGRAM_API_HASH",
   "SESSION_ENCRYPTION_KEY",
@@ -229,17 +234,86 @@ function accountIdFromPath(pathname: string) {
   const match = /^\/v1\/telegram\/accounts\/([^/]+)$/.exec(pathname);
   return match?.[1] ?? null;
 }
-async function recordIncomingMessage(accountId: string, message: { chatId: string; senderId: string; senderRef: string; messageId: string; text: string; createdAt?: string }) {
+async function recordIncomingMessage(accountId: string, message: { chatId: string; chatRef: string; senderId: string; senderRef: string; isPrivate: boolean; messageId: string; text: string; createdAt?: string }) {
   const text = message.text.trim();
   if (!text || !message.messageId) return;
   await store.recordMessage({
     accountId,
     direction: "inbound",
-    recipient: message.senderRef || message.senderId || message.chatId || "unknown",
+    recipient: message.isPrivate
+      ? message.senderRef || message.senderId || message.chatId || "unknown"
+      : message.chatRef || message.chatId || message.senderRef || "unknown",
     text,
     telegramMessageId: message.messageId,
     createdAt: message.createdAt
   });
+}
+
+function syncRecipientTokens(value: string) {
+  return value
+    .split(/[\s,|]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.startsWith("@") || token.startsWith("+"));
+}
+
+function recentHistorySyncTargets(requestedRecipients: string[], messages: MessageRecord[]) {
+  const seen = new Set<string>();
+  const targets: string[] = [];
+  const add = (value: string) => {
+    for (const token of syncRecipientTokens(value)) {
+      const key = token.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      targets.push(token);
+      if (targets.length >= recentHistorySyncTargetLimit) return;
+    }
+  };
+
+  for (const recipient of requestedRecipients) {
+    add(recipient);
+    if (targets.length >= recentHistorySyncTargetLimit) return targets;
+  }
+  for (const message of messages) {
+    add(message.recipient);
+    if (targets.length >= recentHistorySyncTargetLimit) return targets;
+  }
+  return targets;
+}
+
+async function syncRecentTelegramHistory(account: TelegramAccountWithSession, recipients: string[], force: boolean) {
+  if (!recipients.length) return;
+  const inFlight = recentHistorySyncs.get(account.id);
+  if (inFlight) {
+    await inFlight;
+    return;
+  }
+
+  const lastStartedAt = recentHistorySyncStartedAt.get(account.id) || 0;
+  if (!force && Date.now() - lastStartedAt < recentHistorySyncIntervalMs) return;
+  recentHistorySyncStartedAt.set(account.id, Date.now());
+
+  const sync = (async () => {
+    try {
+      const messages = await fetchRecentTelegramMessages(account.sessionString, 100, recipients);
+      for (const message of messages) {
+        await store.recordMessage({
+          accountId: account.id,
+          direction: message.direction,
+          recipient: message.recipient,
+          text: message.text,
+          telegramMessageId: message.messageId,
+          createdAt: message.createdAt
+        });
+      }
+    } catch (error) {
+      console.error(`Recent Telegram history sync failed for account ${account.id}: ${redactedErrorMessage(error)}`);
+    } finally {
+      recentHistorySyncs.delete(account.id);
+    }
+  })();
+
+  recentHistorySyncs.set(account.id, sync);
+  await sync;
 }
 
 async function startTelegramListener(account: TelegramAccountWithSession) {
@@ -590,6 +664,13 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     const account = await store.getAccountWithSession(user.id, accountId);
     if (!account) throw new HttpError(404, "Telegram account was not found.");
     void startTelegramListener(account);
+
+    const existingMessages = await store.listMessages(user.id, accountId, limit);
+    const syncMode = url.searchParams.get("sync") ?? "";
+    if (syncMode === "1" || syncMode === "force") {
+      const targets = recentHistorySyncTargets(url.searchParams.getAll("recipient"), existingMessages);
+      await syncRecentTelegramHistory(account, targets, syncMode === "force");
+    }
 
     sendJson(request, response, 200, { ok: true, messages: await store.listMessages(user.id, accountId, limit) });
     return;

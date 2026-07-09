@@ -464,6 +464,33 @@ function messageRecipientKeys(message) {
 function messageRecipientKey(message) {
   return messageRecipientKeys(message)[0] || "";
 }
+function messagePeerTokens(message) {
+  return String(message?.recipient || "").split(/[\s,|]+/).map(recipientFromGroupLine).filter(Boolean);
+}
+function messagePeerRecipient(message) {
+  const tokens = messagePeerTokens(message);
+  return tokens.find((token) => token.startsWith("@") || token.startsWith("+")) || tokens[0] || messageRecipientKey(message);
+}
+function inboxSyncRecipients() {
+  const seen = new Set();
+  const recipients = [];
+  const add = (value) => {
+    String(value || "").split(/[\s,|]+/).map(recipientFromGroupLine).forEach((recipient) => {
+      if (!recipient || (!recipient.startsWith("@") && !recipient.startsWith("+"))) return;
+      const key = recipient.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      recipients.push(recipient);
+    });
+  };
+  state.contacts.forEach((contact) => {
+    add(contactRecipient(contact));
+    add(contact?.handle || "");
+    add(contact?.phone || "");
+  });
+  (state.inbox.messages || []).forEach((message) => add(message?.recipient || ""));
+  return recipients.slice(0, 50);
+}
 function messageIdentity(message) {
   return [message?.direction || "", message?.telegramMessageId || message?.id || "", message?.text || ""].join("|");
 }
@@ -502,9 +529,11 @@ function messageTime(message) {
 function inboxThreads() {
   const messages = state.inbox.messages || [];
   const query = (el.inboxSearch?.value || "").trim().toLowerCase();
-  const threads = state.contacts.map((contact) => {
+  const contactMessageIds = new Set();
+  const contactThreads = state.contacts.map((contact) => {
     const recipient = contactRecipient(contact);
     const threadMessages = contactThreadMessages(messages, contact);
+    threadMessages.forEach((message) => { if (message?.id) contactMessageIds.add(message.id); });
     const latest = threadMessages.slice().sort((a, b) => messageTime(b) - messageTime(a))[0] || null;
     return {
       id: contactThreadId(contact),
@@ -513,11 +542,34 @@ function inboxThreads() {
       recipient,
       detail: [recipient, contact.group].filter(Boolean).join(" | "),
       latest,
-      contact
+      contact,
+      messages: threadMessages
     };
   });
 
-  const rows = threads.filter((thread) => {
+  const peerGroups = new Map();
+  messages.forEach((message) => {
+    if (message?.id && contactMessageIds.has(message.id)) return;
+    const key = messageRecipientKey(message);
+    if (!key) return;
+    if (!peerGroups.has(key)) {
+      const recipient = messagePeerRecipient(message);
+      peerGroups.set(key, {
+        id: peerThreadId(key),
+        key,
+        label: recipient || "Telegram chat",
+        recipient: recipient.startsWith("@") || recipient.startsWith("+") ? recipient : "",
+        detail: recipient || key,
+        latest: null,
+        messages: []
+      });
+    }
+    const thread = peerGroups.get(key);
+    thread.messages.push(message);
+    thread.latest = thread.messages.slice().sort((a, b) => messageTime(b) - messageTime(a))[0] || null;
+  });
+
+  const rows = [...contactThreads, ...peerGroups.values()].filter((thread) => {
     const searchText = [thread.label, thread.recipient, thread.detail, thread.latest?.text].join(" ").toLowerCase();
     return !query || searchText.includes(query);
   }).sort((a, b) => {
@@ -536,7 +588,12 @@ function currentInboxThread() {
 }
 function messagesForThread(thread) {
   if (!thread) return [];
-  return (thread.contact ? contactThreadMessages(state.inbox.messages || [], thread.contact) : dedupeThreadMessages((state.inbox.messages || []).filter((message) => messageRecipientKey(message) === thread.key))).slice().sort((a, b) => messageTime(a) - messageTime(b));
+  const messages = Array.isArray(thread.messages)
+    ? thread.messages
+    : thread.contact
+      ? contactThreadMessages(state.inbox.messages || [], thread.contact)
+      : (state.inbox.messages || []).filter((message) => messageRecipientKey(message) === thread.key);
+  return dedupeThreadMessages(messages).slice().sort((a, b) => messageTime(a) - messageTime(b));
 }
 function addInboxMessage(message) {
   if (!message?.id) return;
@@ -666,7 +723,8 @@ async function loadInboxMessages(options = {}) {
   if (!options.quiet) status(el.inboxStatus, "Loading inbox...");
   renderInbox();
   try {
-    const query = new URLSearchParams({ accountId: account.id, limit: "500" });
+    const query = new URLSearchParams({ accountId: account.id, limit: "500", sync: options.quiet ? "1" : "force" });
+    inboxSyncRecipients().forEach((recipient) => query.append("recipient", recipient));
     const data = await api(`/v1/messages?${query.toString()}`);
     state.inbox.messages = Array.isArray(data.messages) ? data.messages : [];
     state.inbox.lastSyncAt = Date.now();
@@ -841,7 +899,7 @@ el.profileForm.addEventListener("submit", (event) => {
 });
 el.quickSendForm.addEventListener("submit", async (event) => {
   event.preventDefault(); busy(el.quickSendForm, true); status(el.messageStatus, "Sending from selected profile...");
-  try { await sendMessage($("quick-recipient").value.trim(), $("quick-message").value.trim(), el.messageStatus); $("quick-message").value = ""; status(el.messageStatus, "Message sent.", "success"); }
+  try { const response = await sendMessage($("quick-recipient").value.trim(), $("quick-message").value.trim(), el.messageStatus); if (!response) return; addInboxMessage(response?.message); $("quick-message").value = ""; if (state.activeView === "inbox") renderInbox(); status(el.messageStatus, "Message sent.", "success"); }
   catch (error) { onError(error, el.messageStatus); }
   finally { busy(el.quickSendForm, false); }
 });

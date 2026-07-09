@@ -417,7 +417,7 @@ export class MultiUserStore {
     const database = await this.readDatabase();
     const account = database.telegramAccounts.find((row) => row.id === accountId && row.userId === userId);
     if (!account) return [];
-    const cappedLimit = Math.min(Math.max(limit, 1), 100);
+    const cappedLimit = Math.min(Math.max(limit, 1), 500);
     return database.telegramMessages
       .filter((message) => message.accountId === accountId)
       .sort((left, right) => parseIso(right.createdAt) - parseIso(left.createdAt))
