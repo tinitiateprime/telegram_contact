@@ -1,7 +1,6 @@
 node_modules
 dist
 logs
-postgres_data
 .git
 .agents
 .codex
@@ -14,3 +13,6 @@ postgres_data
 *.session
 .dev-server*.log
 npm-debug.log*
+data
+
+

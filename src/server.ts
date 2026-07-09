@@ -40,7 +40,6 @@ const telegramListeners = new Map<string, TelegramListenerClient>();
 const startingTelegramListeners = new Map<string, Promise<void>>();
 const secretEnvironmentNames = [
   "TELEGRAM_API_HASH",
-  "DATABASE_URL",
   "SESSION_ENCRYPTION_KEY",
   "USER_PROVISIONING_KEY",
   "TELEGRAM_BOT_TOKEN"
@@ -50,7 +49,6 @@ function redactedErrorMessage(error: unknown) {
   let message = error instanceof Error ? error.message : String(error);
   if (!message || message === "undefined") return "Unexpected error.";
 
-  message = message.replace(/((?:postgres(?:ql)?|mysql|mariadb):\/\/[^:\s/]+:)[^@\s]+(@)/gi, "$1[redacted]$2");
   for (const name of secretEnvironmentNames) {
     const value = process.env[name]?.trim();
     if (value && value.length > 3) {
@@ -395,7 +393,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (request.method === "GET" && url.pathname === "/health") {
-    sendJson(request, response, 200, { ok: true, service: "telegram-multi-user", database: "configured" });
+    sendJson(request, response, 200, { ok: true, service: "telegram-multi-user", storage: "json" });
     return;
   }
 
@@ -603,7 +601,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 async function main() {
   config = readConfig();
   configuredLoginUsers = readConfiguredLoginUsers();
-  store = new MultiUserStore(config.databaseUrl, config.sessionEncryptionKey);
+  store = new MultiUserStore(config.dataDir, config.sessionEncryptionKey);
   limiter = new RequestRateLimiter(config.rateLimitWindowSeconds * 1_000);
 
   await store.initialize();
@@ -641,3 +639,5 @@ main().catch((error: unknown) => {
   console.error(`Server startup failed: ${redactedErrorMessage(error)}`);
   process.exitCode = 1;
 });
+
+

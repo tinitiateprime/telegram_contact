@@ -1,6 +1,6 @@
 # Telegram Workflow Dashboard
 
-This project is a local Node.js/TypeScript application for connecting one or more Telegram user accounts, sending messages from the selected account, saving workflow data in the browser workspace, and storing Telegram sessions/messages securely in PostgreSQL.
+This project is a local Node.js/TypeScript application for connecting one or more Telegram user accounts, sending messages from the selected account, saving workflow data in the browser workspace, and storing Telegram sessions/messages securely in an encrypted local JSON datastore.
 
 The important idea:
 
@@ -8,7 +8,7 @@ The important idea:
 Browser dashboard -> local backend API -> encrypted per-account Telegram session -> Telegram
 ```
 
-The Telegram API ID and API Hash belong to the server application. They stay in `.env`. Each connected phone number creates its own encrypted Telegram session in PostgreSQL, so one phone number is never reused as another sender.
+The Telegram API ID and API Hash belong to the server application. They stay in `.env`. Each connected phone number creates its own encrypted Telegram session in `data/store.json`, so one phone number is never reused as another sender.
 
 ## What You Can Do
 
@@ -18,7 +18,7 @@ The Telegram API ID and API Hash belong to the server application. They stay in 
 - Send quick messages to `@username` or `+countrycode` phone numbers.
 - Manage local profiles, contacts, inbox threads, groups, channels, posts, search, settings, and backup JSON.
 - Create, preview, save, send, and schedule posts from the browser workspace.
-- Record sent-post history in browser JSON and backend message history in PostgreSQL.
+- Record sent-post history in browser JSON and backend message history in the JSON datastore.
 - Run a separate listener worker to save incoming Telegram replies.
 - Run an optional Telegram Bot API auto-reply worker.
 
@@ -33,7 +33,7 @@ contact-telegram/
   src/
     server.ts                       HTTP API and browser UI server
     account-client.ts               Telegram user-account login, send, media, listen helpers
-    store.ts                        PostgreSQL tables, encryption, users, sessions, messages
+    store.ts                        JSON datastore, encryption, users, sessions, messages
     config.ts                       .env loading and runtime config
     login-config.ts                 JSON username/password login config
     listen.ts                       Incoming-message listener worker
@@ -58,7 +58,7 @@ contact-telegram/
 
 - Node.js 20 or newer.
 - npm.
-- PostgreSQL 14 or newer.
+
 - A Telegram API ID and API Hash from `https://my.telegram.org`.
 - A real Telegram phone number for each account you want to connect.
 - For production use: HTTPS, a real auth system, secret manager, backups, monitoring, and network restrictions.
@@ -72,16 +72,11 @@ npm install
 npm run build
 ```
 
-### 2. Create a PostgreSQL Database
+### 2. Prepare the JSON Datastore
 
-In pgAdmin or `psql`, create a dedicated database and user:
+No external database setup is required. The backend creates `data/store.json` automatically on first startup.
 
-```sql
-CREATE ROLE telegram_app WITH LOGIN PASSWORD 'Choose_A_Private_Db_Password';
-CREATE DATABASE telegram_multiuser OWNER telegram_app;
-```
-
-Do not use a shared or unrelated database. The app creates its own tables on first server startup.
+The JSON datastore contains encrypted Telegram sessions, encrypted message history, app users, browser sessions, and temporary Telegram login challenges. Keep `SESSION_ENCRYPTION_KEY` stable because changing it makes existing encrypted Telegram sessions/messages unreadable.
 
 ### 3. Create `.env`.
 
@@ -110,7 +105,7 @@ Fill `.env` like this:
 ```env
 TELEGRAM_API_ID=123456
 TELEGRAM_API_HASH=your_telegram_api_hash
-DATABASE_URL=postgresql://telegram_app:Choose_A_Private_Db_Password@127.0.0.1:5432/telegram_multiuser
+DATA_DIR=data
 SESSION_ENCRYPTION_KEY=generated_key_1
 USER_PROVISIONING_KEY=generated_key_2
 SERVICE_HOST=127.0.0.1
@@ -184,13 +179,13 @@ npm run server
 npm run listen
 ```
 
-Then use the browser at `http://127.0.0.1:8787`.
+Then use the browser at `http://127.0.0.1:8787`
 
 If frontend files changed, restart `npm run server` and hard refresh the browser with `Ctrl + F5`.
 
 ## Docker Compose Workflow
 
-Use Docker when you want the app and PostgreSQL to run together without installing PostgreSQL locally.
+Use Docker when you want the app to run with a persistent JSON datastore mounted from `./data`.
 
 1. Copy the Docker env template:
 
@@ -212,7 +207,7 @@ Generate the two private keys with:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-3. Start the app and database:
+3. Start the app:
 
 ```bash
 docker compose up --build
@@ -233,7 +228,7 @@ docker compose down
 docker compose down -v
 ```
 
-`docker compose down -v` deletes the PostgreSQL volume and all connected Telegram sessions/messages. Use it only when you want a fresh database.
+The Docker setup stores backend JSON data in `./data/store.json`. Delete `./data` only when you intentionally want to remove connected Telegram sessions, app users, browser sessions, and backend message history.
 
 If port `8787` is already in use, stop your local `npm run server` process first or change the host port in `docker-compose.yml` from `8787:8787` to another host port, for example `8788:8787`.
 
@@ -245,7 +240,7 @@ Shows a summary of connected numbers, contacts, groups, channels, posts, and the
 
 ### Add Number
 
-Connects a Telegram phone number. The backend sends the Telegram code request, stores the temporary login challenge encrypted, and saves the final session encrypted in PostgreSQL.
+Connects a Telegram phone number. The backend sends the Telegram code request, stores the temporary login challenge encrypted, and saves the final session encrypted in the JSON datastore.
 
 ### Manage Numbers
 
@@ -316,7 +311,7 @@ The app combines all targets, removes duplicates, and sends from the currently s
 
 Shows sent, failed, pending, ready, draft, and scheduled post records from browser localStorage. Each send attempt records recipient, contact/group source, delivery status, sent date/time, Telegram message ID when available, and error text when failed.
 
-Backend message history is also stored encrypted in PostgreSQL and exposed through `GET /v1/messages`.
+Backend message history is also stored encrypted in `data/store.json` and exposed through `GET /v1/messages`.
 
 ### Search
 
@@ -338,19 +333,19 @@ Exports/imports browser workspace JSON:
 - post history
 - settings
 
-Backups do not include `.env`, PostgreSQL data, Telegram session strings, access tokens, or Telegram API credentials.
+Backups do not include `.env`, `data/store.json`, Telegram session strings, access tokens, or Telegram API credentials.
 
 ## Server-Side Data
 
-The backend creates these PostgreSQL tables automatically:
+The backend creates `data/store.json` automatically. It contains JSON arrays equivalent to the old database tables:
 
-- `app_users`: application users and hashed access tokens.
-- `app_sessions`: hashed browser session cookies.
-- `telegram_accounts`: connected Telegram account metadata and encrypted session strings.
-- `telegram_login_challenges`: encrypted temporary login state.
-- `telegram_messages`: encrypted inbound/outbound message records.
+- `appUsers`: application users and hashed access tokens.
+- `appSessions`: hashed browser session cookies.
+- `telegramAccounts`: connected Telegram account metadata and encrypted session strings.
+- `telegramLoginChallenges`: encrypted temporary login state.
+- `telegramMessages`: encrypted inbound/outbound message records.
 
-Encrypted fields use `SESSION_ENCRYPTION_KEY`. Keep this key stable. If it changes, existing encrypted Telegram sessions and messages cannot be decrypted.
+Encrypted fields in `data/store.json` use `SESSION_ENCRYPTION_KEY`. Keep this key stable. If it changes, existing encrypted Telegram sessions and messages cannot be decrypted.
 
 ## Browser Local Data
 
@@ -367,7 +362,7 @@ telegramWorkflow:postHistory
 telegramWorkflow:settings
 ```
 
-Use `Backup -> Export backup` before clearing browser data or moving browsers.
+Use `Backup -> Export backup` before clearing browser data or moving browsers. Back up `data/store.json` separately if you need to preserve connected Telegram sessions and backend message history.
 
 ## Environment Variables
 
@@ -377,7 +372,7 @@ Main app variables:
 | --- | --- | --- | --- |
 | `TELEGRAM_API_ID` | Yes | None | Server app API ID from `my.telegram.org`. |
 | `TELEGRAM_API_HASH` | Yes | None | Server app API Hash from `my.telegram.org`. |
-| `DATABASE_URL` | Yes | None | PostgreSQL connection string. |
+| `DATA_DIR` | No | `data` | Directory for backend JSON datastore files. |
 | `SESSION_ENCRYPTION_KEY` | Yes | None | Base64url 32-byte key for encrypted sessions/messages. |
 | `USER_PROVISIONING_KEY` | Yes | None | Admin secret for `POST /v1/users`. |
 | `SERVICE_HOST` | No | `127.0.0.1` | HTTP bind host. |
@@ -696,7 +691,7 @@ Generate a new key:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
 ```
 
-Only change this on a fresh database. Changing it on existing data makes encrypted sessions/messages unreadable.
+Only change this on a fresh datastore. Changing it on existing data makes encrypted sessions/messages unreadable.
 
 ### Browser sign-in fails
 
@@ -728,8 +723,12 @@ Change `SERVICE_PORT` in `.env`, then restart `npm run server`.
 - Change the default `admin` / `admin123` credentials.
 - Use HTTPS and set `SESSION_COOKIE_SECURE=true`.
 - Keep `.env` and all secrets in a secret manager.
-- Restrict network access to PostgreSQL and the API.
+- Restrict network access to the API.
 - Set exact `CORS_ORIGIN` only if the frontend is hosted separately.
-- Add backups for PostgreSQL and exported workspace JSON where needed.
+- Add backups for `data/store.json` and exported workspace JSON where needed.
 - Add monitoring, structured logs, retries, abuse controls, and alerting.
 - Respect Telegram rate limits, user consent, privacy rules, and data-retention obligations.
+
+
+
+

@@ -19,7 +19,8 @@ async function main() {
   }
 
   const config = readConfig();
-  const store = new MultiUserStore(config.databaseUrl, config.sessionEncryptionKey);
+  const store = new MultiUserStore(config.dataDir, config.sessionEncryptionKey);
+  await store.initialize();
   try {
     const user = await store.findUserByAccessToken(token);
     if (!user) throw new Error("Invalid access token.");
@@ -43,3 +44,5 @@ main().catch((error) => {
   console.error("Command failed without logging sensitive input.");
   process.exitCode = 1;
 });
+
+

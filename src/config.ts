@@ -51,7 +51,7 @@ function booleanEnv(name: string, fallback: boolean) {
 export type AppConfig = {
   telegramApiId: number;
   telegramApiHash: string;
-  databaseUrl: string;
+  dataDir: string;
   sessionEncryptionKey: string;
   userProvisioningKey: string;
   serviceHost: string;
@@ -88,7 +88,7 @@ export function readConfig(): AppConfig {
   return {
     telegramApiId,
     telegramApiHash: requiredEnv("TELEGRAM_API_HASH"),
-    databaseUrl: requiredEnv("DATABASE_URL"),
+    dataDir: optionalEnv("DATA_DIR", "data"),
     sessionEncryptionKey: requiredEnv("SESSION_ENCRYPTION_KEY"),
     userProvisioningKey: requiredEnv("USER_PROVISIONING_KEY"),
     serviceHost: optionalEnv("SERVICE_HOST", process.env.NODE_ENV === "production" ? "0.0.0.0" : "127.0.0.1"),
@@ -118,6 +118,7 @@ export function readBotConfig(): BotConfig {
       "BOT_FALLBACK_REPLY",
       "Thanks for your question. I do not have a saved answer for that yet. Please leave your contact details and our team will reply."
     ),
+    
     botResponderUrl,
     botResponderTimeoutSeconds: positiveInteger("BOT_RESPONDER_TIMEOUT_SECONDS", 15),
     botClearWebhookOnStart: booleanEnv("BOT_CLEAR_WEBHOOK_ON_START", true)

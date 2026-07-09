@@ -3,8 +3,10 @@ dist/
 .env
 .session
 logs/
-postgres_data/
 .env.*
 !.env.example
 !.env.docker.example
 *.session
+data/
+
+

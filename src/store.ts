@@ -1,5 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { Pool } from "pg";
+import { constants as fsConstants } from "node:fs";
+import { access, mkdir, open, readFile, rename, stat, unlink, writeFile, type FileHandle } from "node:fs/promises";
+import path from "node:path";
 import { SecretCipher } from "./crypto.ts";
 
 export type AppUser = { id: string; displayName: string };
@@ -36,145 +38,175 @@ export type MessageRecord = {
 
 type MessageRecordInput = Omit<MessageRecord, "id" | "createdAt"> & { createdAt?: Date | string };
 
+type AppUserRow = {
+  id: string;
+  displayName: string;
+  tokenHash: string;
+  configuredLogin: string;
+  createdAt: string;
+};
+
+type BrowserSessionRow = {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: string;
+  createdAt: string;
+};
+
+type TelegramAccountRow = {
+  id: string;
+  userId: string;
+  telegramUserId: string;
+  displayName: string;
+  username: string;
+  sessionCiphertext: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type LoginChallengeRow = {
+  id: string;
+  userId: string;
+  phoneCiphertext: string;
+  phoneCodeHashCiphertext: string;
+  sessionCiphertext: string;
+  status: "code_sent" | "password_required";
+  expiresAt: string;
+  createdAt: string;
+};
+
 type MessageRow = {
   id: string;
-  account_id: string;
+  accountId: string;
   direction: "inbound" | "outbound";
-  recipient_ciphertext: string;
-  text_ciphertext: string;
-  telegram_message_id: string;
-  created_at: Date;
+  recipientCiphertext: string;
+  textCiphertext: string;
+  telegramMessageId: string;
+  createdAt: string;
 };
 
-type AccountRow = {
-  id: string;
-  telegram_user_id: string;
-  display_name: string;
-  username: string | null;
-  session_ciphertext: string;
-  created_at: Date;
-  updated_at: Date;
-};
-
-type ChallengeRow = {
-  id: string;
-  phone_ciphertext: string;
-  phone_code_hash_ciphertext: string;
-  session_ciphertext: string;
-  status: "code_sent" | "password_required";
-  expires_at: Date;
+type JsonDatabase = {
+  version: 1;
+  appUsers: AppUserRow[];
+  appSessions: BrowserSessionRow[];
+  telegramAccounts: TelegramAccountRow[];
+  telegramLoginChallenges: LoginChallengeRow[];
+  telegramMessages: MessageRow[];
 };
 
 export class AccountAlreadyLinkedError extends Error {}
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 const asIso = (value: Date) => value.toISOString();
+const nowIso = () => new Date().toISOString();
+const sleep = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function emptyDatabase(): JsonDatabase {
+  return {
+    version: 1,
+    appUsers: [],
+    appSessions: [],
+    telegramAccounts: [],
+    telegramLoginChallenges: [],
+    telegramMessages: []
+  };
+}
+
+function parseIso(value: string) {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function normalizeCreatedAt(value: Date | string | undefined) {
+  if (!value) return nowIso();
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? asIso(date) : nowIso();
+}
+
+function coerceDatabase(raw: unknown): JsonDatabase {
+  if (!raw || typeof raw !== "object") return emptyDatabase();
+  const input = raw as Partial<JsonDatabase>;
+  return {
+    version: 1,
+    appUsers: Array.isArray(input.appUsers) ? input.appUsers as AppUserRow[] : [],
+    appSessions: Array.isArray(input.appSessions) ? input.appSessions as BrowserSessionRow[] : [],
+    telegramAccounts: Array.isArray(input.telegramAccounts) ? input.telegramAccounts as TelegramAccountRow[] : [],
+    telegramLoginChallenges: Array.isArray(input.telegramLoginChallenges)
+      ? input.telegramLoginChallenges as LoginChallengeRow[]
+      : [],
+    telegramMessages: Array.isArray(input.telegramMessages) ? input.telegramMessages as MessageRow[] : []
+  };
+}
 
 export class MultiUserStore {
-  private readonly pool: Pool;
+  private readonly dataDir: string;
+  private readonly dataFile: string;
+  private readonly lockFile: string;
   private readonly cipher: SecretCipher;
+  private queue = Promise.resolve();
 
-  constructor(databaseUrl: string, sessionEncryptionKey: string) {
-    this.pool = new Pool({ connectionString: databaseUrl });
+  constructor(dataDir: string, sessionEncryptionKey: string) {
+    this.dataDir = path.resolve(process.cwd(), dataDir || "data");
+    this.dataFile = path.join(this.dataDir, "store.json");
+    this.lockFile = path.join(this.dataDir, "store.lock");
     this.cipher = new SecretCipher(sessionEncryptionKey);
   }
 
   async initialize() {
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS app_users (
-        id UUID PRIMARY KEY,
-        display_name TEXT NOT NULL,
-        token_hash TEXT NOT NULL UNIQUE,
-        configured_login TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      ALTER TABLE app_users ADD COLUMN IF NOT EXISTS configured_login TEXT;
-      CREATE UNIQUE INDEX IF NOT EXISTS app_users_configured_login_idx ON app_users(configured_login);
-      CREATE TABLE IF NOT EXISTS app_sessions (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
-        token_hash TEXT NOT NULL UNIQUE,
-        expires_at TIMESTAMPTZ NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS app_sessions_user_id_idx ON app_sessions(user_id);
-      CREATE INDEX IF NOT EXISTS app_sessions_expires_at_idx ON app_sessions(expires_at);
-      CREATE TABLE IF NOT EXISTS telegram_accounts (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
-        telegram_user_id TEXT NOT NULL UNIQUE,
-        display_name TEXT NOT NULL,
-        username TEXT,
-        session_ciphertext TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS telegram_accounts_user_id_idx ON telegram_accounts(user_id);
-      CREATE TABLE IF NOT EXISTS telegram_login_challenges (
-        id UUID PRIMARY KEY,
-        user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
-        phone_ciphertext TEXT NOT NULL,
-        phone_code_hash_ciphertext TEXT NOT NULL,
-        session_ciphertext TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('code_sent', 'password_required')),
-        expires_at TIMESTAMPTZ NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS telegram_login_challenges_user_id_idx ON telegram_login_challenges(user_id);
-      CREATE TABLE IF NOT EXISTS telegram_messages (
-        id UUID PRIMARY KEY,
-        account_id UUID NOT NULL REFERENCES telegram_accounts(id) ON DELETE CASCADE,
-        direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
-        recipient_ciphertext TEXT NOT NULL,
-        text_ciphertext TEXT NOT NULL,
-        telegram_message_id TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS telegram_messages_account_id_created_at_idx
-        ON telegram_messages(account_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS telegram_messages_account_id_direction_message_id_idx
-        ON telegram_messages(account_id, direction, telegram_message_id);
-    `);
+    await mkdir(this.dataDir, { recursive: true });
+    try {
+      await access(this.dataFile, fsConstants.F_OK);
+    } catch {
+      await this.writeDatabase(emptyDatabase());
+    }
   }
 
   async close() {
-    await this.pool.end();
+    await this.queue;
   }
 
   async createUser(displayName: string) {
     const id = randomUUID();
     const accessToken = `tgr_${randomBytes(32).toString("base64url")}`;
     const user: AppUser = { id, displayName };
-    await this.pool.query(
-      "INSERT INTO app_users (id, display_name, token_hash) VALUES ($1, $2, $3)",
-      [id, displayName, hashToken(accessToken)]
-    );
+    await this.updateDatabase((database) => {
+      database.appUsers.push({
+        id,
+        displayName,
+        tokenHash: hashToken(accessToken),
+        configuredLogin: "",
+        createdAt: nowIso()
+      });
+      return null;
+    });
     return { user, accessToken };
   }
 
   async findOrCreateConfiguredUser(loginId: string, displayName: string): Promise<AppUser> {
-    const result = await this.pool.query<{ id: string; display_name: string }>(
-      `INSERT INTO app_users (id, display_name, token_hash, configured_login)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (configured_login) DO UPDATE SET display_name = EXCLUDED.display_name
-       RETURNING id, display_name`,
-      [
-        randomUUID(),
+    return this.updateDatabase((database) => {
+      const existing = database.appUsers.find((user) => user.configuredLogin === loginId);
+      if (existing) {
+        existing.displayName = displayName;
+        return { id: existing.id, displayName: existing.displayName };
+      }
+
+      const row: AppUserRow = {
+        id: randomUUID(),
         displayName,
-        hashToken(`configured-login:${randomBytes(32).toString("base64url")}`),
-        loginId
-      ]
-    );
-    const row = result.rows[0];
-    return { id: row.id, displayName: row.display_name };
+        tokenHash: hashToken(`configured-login:${randomBytes(32).toString("base64url")}`),
+        configuredLogin: loginId,
+        createdAt: nowIso()
+      };
+      database.appUsers.push(row);
+      return { id: row.id, displayName: row.displayName };
+    });
   }
+
   async findUserByAccessToken(accessToken: string): Promise<AppUser | null> {
-    const result = await this.pool.query<{ id: string; display_name: string }>(
-      "SELECT id, display_name FROM app_users WHERE token_hash = $1",
-      [hashToken(accessToken)]
-    );
-    const row = result.rows[0];
-    return row ? { id: row.id, displayName: row.display_name } : null;
+    const database = await this.readDatabase();
+    const row = database.appUsers.find((user) => user.tokenHash === hashToken(accessToken));
+    return row ? { id: row.id, displayName: row.displayName } : null;
   }
 
   async createBrowserSession(accessToken: string, ttlHours: number) {
@@ -187,28 +219,37 @@ export class MultiUserStore {
     const id = randomUUID();
     const sessionToken = `tgs_${randomBytes(32).toString("base64url")}`;
     const expiresAt = new Date(Date.now() + ttlHours * 60 * 60_000);
-    await this.pool.query("DELETE FROM app_sessions WHERE expires_at <= NOW()");
-    await this.pool.query(
-      "INSERT INTO app_sessions (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)",
-      [id, user.id, hashToken(sessionToken), expiresAt]
-    );
+    await this.updateDatabase((database) => {
+      database.appSessions = database.appSessions.filter((session) => parseIso(session.expiresAt) > Date.now());
+      database.appSessions.push({
+        id,
+        userId: user.id,
+        tokenHash: hashToken(sessionToken),
+        expiresAt: asIso(expiresAt),
+        createdAt: nowIso()
+      });
+      return null;
+    });
     return { user, sessionToken, expiresAt: asIso(expiresAt) };
   }
+
   async findUserByBrowserSession(sessionToken: string): Promise<AppUser | null> {
-    const result = await this.pool.query<{ id: string; display_name: string }>(
-      `SELECT users.id, users.display_name
-       FROM app_sessions AS sessions
-       JOIN app_users AS users ON users.id = sessions.user_id
-       WHERE sessions.token_hash = $1 AND sessions.expires_at > NOW()`,
-      [hashToken(sessionToken)]
-    );
-    const row = result.rows[0];
-    return row ? { id: row.id, displayName: row.display_name } : null;
+    const database = await this.readDatabase();
+    const session = database.appSessions.find((row) => (
+      row.tokenHash === hashToken(sessionToken) && parseIso(row.expiresAt) > Date.now()
+    ));
+    if (!session) return null;
+    const user = database.appUsers.find((row) => row.id === session.userId);
+    return user ? { id: user.id, displayName: user.displayName } : null;
   }
 
   async deleteBrowserSession(sessionToken: string) {
-    await this.pool.query("DELETE FROM app_sessions WHERE token_hash = $1", [hashToken(sessionToken)]);
+    await this.updateDatabase((database) => {
+      database.appSessions = database.appSessions.filter((session) => session.tokenHash !== hashToken(sessionToken));
+      return null;
+    });
   }
+
   async createLoginChallenge(
     userId: string,
     phone: string,
@@ -218,167 +259,276 @@ export class MultiUserStore {
   ) {
     const id = randomUUID();
     const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
-    await this.pool.query("DELETE FROM telegram_login_challenges WHERE expires_at <= NOW() OR user_id = $1", [userId]);
-    await this.pool.query(
-      `INSERT INTO telegram_login_challenges
-        (id, user_id, phone_ciphertext, phone_code_hash_ciphertext, session_ciphertext, status, expires_at)
-       VALUES ($1, $2, $3, $4, $5, 'code_sent', $6)`,
-      [id, userId, this.cipher.encrypt(phone), this.cipher.encrypt(phoneCodeHash), this.cipher.encrypt(sessionString), expiresAt]
-    );
+    await this.updateDatabase((database) => {
+      database.telegramLoginChallenges = database.telegramLoginChallenges.filter((challenge) => (
+        parseIso(challenge.expiresAt) > Date.now() && challenge.userId !== userId
+      ));
+      database.telegramLoginChallenges.push({
+        id,
+        userId,
+        phoneCiphertext: this.cipher.encrypt(phone),
+        phoneCodeHashCiphertext: this.cipher.encrypt(phoneCodeHash),
+        sessionCiphertext: this.cipher.encrypt(sessionString),
+        status: "code_sent",
+        expiresAt: asIso(expiresAt),
+        createdAt: nowIso()
+      });
+      return null;
+    });
     return { id, expiresAt: asIso(expiresAt) };
   }
 
   async getLoginChallenge(userId: string, challengeId: string): Promise<LoginChallenge | null> {
-    const result = await this.pool.query<ChallengeRow>(
-      `SELECT id, phone_ciphertext, phone_code_hash_ciphertext, session_ciphertext, status, expires_at
-       FROM telegram_login_challenges WHERE id = $1 AND user_id = $2`,
-      [challengeId, userId]
-    );
-    const row = result.rows[0];
-    if (!row) return null;
-    if (row.expires_at.getTime() <= Date.now()) {
-      await this.pool.query("DELETE FROM telegram_login_challenges WHERE id = $1", [challengeId]);
-      return null;
-    }
-    return {
-      id: row.id,
-      phone: this.cipher.decrypt(row.phone_ciphertext),
-      phoneCodeHash: this.cipher.decrypt(row.phone_code_hash_ciphertext),
-      sessionString: this.cipher.decrypt(row.session_ciphertext),
-      status: row.status,
-      expiresAt: asIso(row.expires_at)
-    };
+    return this.updateDatabase((database) => {
+      const row = database.telegramLoginChallenges.find((challenge) => (
+        challenge.id === challengeId && challenge.userId === userId
+      ));
+      if (!row) return null;
+      if (parseIso(row.expiresAt) <= Date.now()) {
+        database.telegramLoginChallenges = database.telegramLoginChallenges.filter((challenge) => challenge.id !== challengeId);
+        return null;
+      }
+      return {
+        id: row.id,
+        phone: this.cipher.decrypt(row.phoneCiphertext),
+        phoneCodeHash: this.cipher.decrypt(row.phoneCodeHashCiphertext),
+        sessionString: this.cipher.decrypt(row.sessionCiphertext),
+        status: row.status,
+        expiresAt: row.expiresAt
+      };
+    });
   }
 
   async markPasswordRequired(userId: string, challengeId: string, sessionString: string) {
-    await this.pool.query(
-      `UPDATE telegram_login_challenges SET status = 'password_required', session_ciphertext = $1
-       WHERE id = $2 AND user_id = $3`,
-      [this.cipher.encrypt(sessionString), challengeId, userId]
-    );
+    await this.updateDatabase((database) => {
+      const challenge = database.telegramLoginChallenges.find((row) => row.id === challengeId && row.userId === userId);
+      if (challenge) {
+        challenge.status = "password_required";
+        challenge.sessionCiphertext = this.cipher.encrypt(sessionString);
+      }
+      return null;
+    });
   }
 
   async deleteLoginChallenge(userId: string, challengeId: string) {
-    await this.pool.query("DELETE FROM telegram_login_challenges WHERE id = $1 AND user_id = $2", [challengeId, userId]);
+    await this.updateDatabase((database) => {
+      database.telegramLoginChallenges = database.telegramLoginChallenges.filter((challenge) => (
+        challenge.id !== challengeId || challenge.userId !== userId
+      ));
+      return null;
+    });
   }
 
   async saveTelegramAccount(
     userId: string,
     input: { telegramUserId: string; displayName: string; username: string; sessionString: string }
   ): Promise<TelegramAccount> {
-    const result = await this.pool.query<AccountRow>(
-      `INSERT INTO telegram_accounts
-        (id, user_id, telegram_user_id, display_name, username, session_ciphertext)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (telegram_user_id) DO UPDATE SET
-         display_name = EXCLUDED.display_name, username = EXCLUDED.username,
-         session_ciphertext = EXCLUDED.session_ciphertext, updated_at = NOW()
-       WHERE telegram_accounts.user_id = EXCLUDED.user_id
-       RETURNING id, telegram_user_id, display_name, username, session_ciphertext, created_at, updated_at`,
-      [randomUUID(), userId, input.telegramUserId, input.displayName, input.username || null, this.cipher.encrypt(input.sessionString)]
-    );
-    const row = result.rows[0];
-    if (!row) {
-      throw new AccountAlreadyLinkedError("This Telegram account is already linked to another app user.");
-    }
-    return this.toAccount(row);
+    return this.updateDatabase((database) => {
+      const existing = database.telegramAccounts.find((account) => account.telegramUserId === input.telegramUserId);
+      if (existing && existing.userId !== userId) {
+        throw new AccountAlreadyLinkedError("This Telegram account is already linked to another app user.");
+      }
+
+      if (existing) {
+        existing.displayName = input.displayName;
+        existing.username = input.username || "";
+        existing.sessionCiphertext = this.cipher.encrypt(input.sessionString);
+        existing.updatedAt = nowIso();
+        return this.toAccount(existing);
+      }
+
+      const createdAt = nowIso();
+      const row: TelegramAccountRow = {
+        id: randomUUID(),
+        userId,
+        telegramUserId: input.telegramUserId,
+        displayName: input.displayName,
+        username: input.username || "",
+        sessionCiphertext: this.cipher.encrypt(input.sessionString),
+        createdAt,
+        updatedAt: createdAt
+      };
+      database.telegramAccounts.push(row);
+      return this.toAccount(row);
+    });
   }
+
   async listAccounts(userId: string): Promise<TelegramAccount[]> {
-    const result = await this.pool.query<AccountRow>(
-      `SELECT id, telegram_user_id, display_name, username, session_ciphertext, created_at, updated_at
-       FROM telegram_accounts WHERE user_id = $1 ORDER BY created_at ASC`,
-      [userId]
-    );
-    return result.rows.map((row) => this.toAccount(row));
+    const database = await this.readDatabase();
+    return database.telegramAccounts
+      .filter((account) => account.userId === userId)
+      .sort((left, right) => parseIso(left.createdAt) - parseIso(right.createdAt))
+      .map((account) => this.toAccount(account));
   }
 
   async getAccountWithSession(userId: string, accountId: string): Promise<TelegramAccountWithSession | null> {
-    const result = await this.pool.query<AccountRow>(
-      `SELECT id, telegram_user_id, display_name, username, session_ciphertext, created_at, updated_at
-       FROM telegram_accounts WHERE id = $1 AND user_id = $2`,
-      [accountId, userId]
-    );
-    return result.rows[0] ? this.toAccountWithSession(result.rows[0]) : null;
+    const database = await this.readDatabase();
+    const account = database.telegramAccounts.find((row) => row.id === accountId && row.userId === userId);
+    return account ? this.toAccountWithSession(account) : null;
   }
 
   async getAllAccountsWithSessions(): Promise<TelegramAccountWithSession[]> {
-    const result = await this.pool.query<AccountRow>(
-      `SELECT id, telegram_user_id, display_name, username, session_ciphertext, created_at, updated_at
-       FROM telegram_accounts ORDER BY created_at ASC`
-    );
-    return result.rows.map((row) => this.toAccountWithSession(row));
+    const database = await this.readDatabase();
+    return database.telegramAccounts
+      .sort((left, right) => parseIso(left.createdAt) - parseIso(right.createdAt))
+      .map((account) => this.toAccountWithSession(account));
   }
 
-  async deleteAccount(userId: string, accountId: string) {
-    const account = await this.getAccountWithSession(userId, accountId);
-    if (!account) return null;
-    await this.pool.query("DELETE FROM telegram_accounts WHERE id = $1 AND user_id = $2", [accountId, userId]);
-    return account;
+  async deleteAccount(userId: string, accountId: string): Promise<TelegramAccountWithSession | null> {
+    let deleted: TelegramAccountWithSession | null = null;
+    await this.updateDatabase((database) => {
+      const account = database.telegramAccounts.find((row) => row.id === accountId && row.userId === userId);
+      if (!account) return null;
+      deleted = this.toAccountWithSession(account);
+      database.telegramAccounts = database.telegramAccounts.filter((row) => row.id !== accountId);
+      database.telegramMessages = database.telegramMessages.filter((message) => message.accountId !== accountId);
+      return null;
+    });
+    return deleted;
   }
 
   async recordMessage(input: MessageRecordInput): Promise<MessageRecord> {
-    const existing = await this.pool.query<MessageRow>(
-      `SELECT id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id, created_at
-       FROM telegram_messages
-       WHERE account_id = $1 AND direction = $2 AND telegram_message_id = $3
-       ORDER BY created_at ASC LIMIT 25`,
-      [input.accountId, input.direction, input.telegramMessageId]
-    );
-    const duplicate = existing.rows.find((row) => this.cipher.decrypt(row.recipient_ciphertext) === input.recipient);
-    if (duplicate) return this.toMessageRecord(duplicate);
+    return this.updateDatabase((database) => {
+      const duplicate = database.telegramMessages
+        .filter((row) => (
+          row.accountId === input.accountId &&
+          row.direction === input.direction &&
+          row.telegramMessageId === input.telegramMessageId
+        ))
+        .sort((left, right) => parseIso(left.createdAt) - parseIso(right.createdAt))
+        .find((row) => this.cipher.decrypt(row.recipientCiphertext) === input.recipient);
+      if (duplicate) return this.toMessageRecord(duplicate);
 
-    const id = randomUUID();
-    const createdAt = input.createdAt ? new Date(input.createdAt) : null;
-    const createdAtParam = createdAt && Number.isFinite(createdAt.getTime()) ? createdAt : null;
-    const result = await this.pool.query<MessageRow>(
-      `INSERT INTO telegram_messages
-        (id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
-       RETURNING id, account_id, direction, recipient_ciphertext, text_ciphertext, telegram_message_id, created_at`,
-      [
-        id,
-        input.accountId,
-        input.direction,
-        this.cipher.encrypt(input.recipient),
-        this.cipher.encrypt(input.text),
-        input.telegramMessageId,
-        createdAtParam
-      ]
-    );
-    return this.toMessageRecord(result.rows[0]);
+      const row: MessageRow = {
+        id: randomUUID(),
+        accountId: input.accountId,
+        direction: input.direction,
+        recipientCiphertext: this.cipher.encrypt(input.recipient),
+        textCiphertext: this.cipher.encrypt(input.text),
+        telegramMessageId: input.telegramMessageId,
+        createdAt: normalizeCreatedAt(input.createdAt)
+      };
+      database.telegramMessages.push(row);
+      return this.toMessageRecord(row);
+    });
   }
+
   async listMessages(userId: string, accountId: string, limit = 50): Promise<MessageRecord[]> {
-    const result = await this.pool.query<MessageRow>(
-      `SELECT messages.id, messages.account_id, messages.direction, messages.recipient_ciphertext,
-              messages.text_ciphertext, messages.telegram_message_id, messages.created_at
-       FROM telegram_messages AS messages
-       JOIN telegram_accounts AS accounts ON accounts.id = messages.account_id
-       WHERE messages.account_id = $1 AND accounts.user_id = $2
-       ORDER BY messages.created_at DESC LIMIT $3`,
-      [accountId, userId, Math.min(Math.max(limit, 1), 100)]
-    );
-    return result.rows.map((row) => this.toMessageRecord(row));
+    const database = await this.readDatabase();
+    const account = database.telegramAccounts.find((row) => row.id === accountId && row.userId === userId);
+    if (!account) return [];
+    const cappedLimit = Math.min(Math.max(limit, 1), 100);
+    return database.telegramMessages
+      .filter((message) => message.accountId === accountId)
+      .sort((left, right) => parseIso(right.createdAt) - parseIso(left.createdAt))
+      .slice(0, cappedLimit)
+      .map((message) => this.toMessageRecord(message));
   }
-  private toAccount(row: AccountRow): TelegramAccount {
+
+  async issueAccessTokenForAccount(accountId: string) {
+    const accessToken = `tgr_${randomBytes(32).toString("base64url")}`;
+    const user = await this.updateDatabase((database) => {
+      const account = database.telegramAccounts.find((row) => row.id === accountId);
+      if (!account) return null;
+      const owner = database.appUsers.find((row) => row.id === account.userId);
+      if (!owner) return null;
+      owner.tokenHash = hashToken(accessToken);
+      return { id: owner.id, displayName: owner.displayName };
+    });
+    return user ? { user, accessToken } : null;
+  }
+
+  private async updateDatabase<T>(operation: (database: JsonDatabase) => T | Promise<T>): Promise<T> {
+    const run = async () => this.withFileLock(async () => {
+      const database = await this.readDatabase();
+      const result = await operation(database);
+      await this.writeDatabase(database);
+      return result;
+    });
+    const result = this.queue.then(run, run);
+    this.queue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  private async readDatabase(): Promise<JsonDatabase> {
+    await mkdir(this.dataDir, { recursive: true });
+    try {
+      const raw = await readFile(this.dataFile, "utf8");
+      return coerceDatabase(JSON.parse(raw) as unknown);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+        return emptyDatabase();
+      }
+      throw error;
+    }
+  }
+
+  private async writeDatabase(database: JsonDatabase) {
+    await mkdir(this.dataDir, { recursive: true });
+    const tempFile = path.join(this.dataDir, `store.${process.pid}.${Date.now()}.tmp`);
+    await writeFile(tempFile, `${JSON.stringify(database, null, 2)}\n`, "utf8");
+    await rename(tempFile, this.dataFile);
+  }
+
+  private async withFileLock<T>(operation: () => Promise<T>): Promise<T> {
+    let handle: FileHandle | null = null;
+    const startedAt = Date.now();
+    while (!handle) {
+      try {
+        await mkdir(this.dataDir, { recursive: true });
+        handle = await open(this.lockFile, "wx");
+      } catch (error) {
+        if (!error || typeof error !== "object" || !("code" in error) || error.code !== "EEXIST") throw error;
+        await this.removeStaleLock();
+        if (Date.now() - startedAt > 10_000) {
+          throw new Error(`Timed out waiting for JSON datastore lock at ${this.lockFile}.`);
+        }
+        await sleep(50);
+      }
+    }
+
+    try {
+      return await operation();
+    } finally {
+      await handle.close();
+      await unlink(this.lockFile).catch(() => undefined);
+    }
+  }
+
+  private async removeStaleLock() {
+    try {
+      const info = await stat(this.lockFile);
+      if (Date.now() - info.mtimeMs > 30_000) await unlink(this.lockFile);
+    } catch {
+      // Another process may have released the lock.
+    }
+  }
+
+  private toAccount(row: TelegramAccountRow): TelegramAccount {
     return {
-      id: row.id, telegramUserId: row.telegram_user_id, displayName: row.display_name,
-      username: row.username ?? "", createdAt: asIso(row.created_at), updatedAt: asIso(row.updated_at)
+      id: row.id,
+      telegramUserId: row.telegramUserId,
+      displayName: row.displayName,
+      username: row.username,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt
     };
   }
 
-  private toAccountWithSession(row: AccountRow): TelegramAccountWithSession {
-    return { ...this.toAccount(row), sessionString: this.cipher.decrypt(row.session_ciphertext) };
+  private toAccountWithSession(row: TelegramAccountRow): TelegramAccountWithSession {
+    return { ...this.toAccount(row), sessionString: this.cipher.decrypt(row.sessionCiphertext) };
   }
 
   private toMessageRecord(row: MessageRow): MessageRecord {
     return {
       id: row.id,
-      accountId: row.account_id,
+      accountId: row.accountId,
       direction: row.direction,
-      recipient: this.cipher.decrypt(row.recipient_ciphertext),
-      text: this.cipher.decrypt(row.text_ciphertext),
-      telegramMessageId: row.telegram_message_id,
-      createdAt: asIso(row.created_at)
+      recipient: this.cipher.decrypt(row.recipientCiphertext),
+      text: this.cipher.decrypt(row.textCiphertext),
+      telegramMessageId: row.telegramMessageId,
+      createdAt: row.createdAt
     };
   }
 }
+

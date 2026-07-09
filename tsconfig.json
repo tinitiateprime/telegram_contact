@@ -13,8 +13,10 @@
     ],
     "noEmit": true,
     "allowImportingTsExtensions": true
+
   },
   "include": [
     "src/**/*.ts"
   ]
 }
+

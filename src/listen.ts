@@ -4,7 +4,7 @@ import { MultiUserStore } from "./store.ts";
 
 async function main() {
   const config = readConfig();
-  const store = new MultiUserStore(config.databaseUrl, config.sessionEncryptionKey);
+  const store = new MultiUserStore(config.dataDir, config.sessionEncryptionKey);
   await store.initialize();
   const accounts = await store.getAllAccountsWithSessions();
   const clients = await Promise.all(
@@ -41,3 +41,4 @@ main().catch((error) => {
   console.error("Command failed without logging sensitive input.");
   process.exitCode = 1;
 });
+
