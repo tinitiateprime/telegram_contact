@@ -25,3 +25,5 @@ COPY config ./config
 EXPOSE 8787
 
 CMD ["npm", "start"]
+
+
