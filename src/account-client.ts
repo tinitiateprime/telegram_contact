@@ -3,7 +3,7 @@ import { Api, TelegramClient } from "telegram";
 import { NewMessage } from "telegram/events/index.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { CustomFile } from "telegram/client/uploads.js";
-import { readConfig } from "./config.js";
+import { readConfig } from "./config.ts";
 
 export type TelegramProfile = {
   telegramUserId: string;

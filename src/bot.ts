@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { readBotConfig, type BotConfig } from "./config.js";
+import { readBotConfig, type BotConfig } from "./config.ts";
 
 type TelegramApiResponse<T> =
   | { ok: true; result: T }

@@ -51,7 +51,6 @@ contact-telegram/
   docs/
     telegram-workflow-requirements.md
     screenshots/                    Setup and workflow screenshots
-  dist/                             Compiled JavaScript after npm run build
   logs/                             Local log/output files
 ```
 
@@ -586,13 +585,13 @@ Run incoming-message listener:
 npm run listen
 ```
 
-Compile TypeScript:
+Type-check TypeScript:
 
 ```bash
 npm run build
 ```
 
-Run compiled server after build:
+Run the TypeScript server:
 
 ```bash
 npm start

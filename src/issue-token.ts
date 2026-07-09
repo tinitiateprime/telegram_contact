@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { Pool } from "pg";
-import { readConfig } from "./config.js";
+import { readConfig } from "./config.ts";
 
 function readFlag(name: string) {
   const args = process.argv.slice(2);

@@ -1,6 +1,6 @@
-import { listenForAccount } from "./account-client.js";
-import { readConfig } from "./config.js";
-import { MultiUserStore } from "./store.js";
+import { listenForAccount } from "./account-client.ts";
+import { readConfig } from "./config.ts";
+import { MultiUserStore } from "./store.ts";
 
 async function main() {
   const config = readConfig();

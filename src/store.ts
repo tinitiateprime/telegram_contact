@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { Pool } from "pg";
-import { SecretCipher } from "./crypto.js";
+import { SecretCipher } from "./crypto.ts";
 
 export type AppUser = { id: string; displayName: string };
 

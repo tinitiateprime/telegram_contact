@@ -10,11 +10,11 @@ import {
   sendTelegramMessage,
   listenForAccount,
   normalizePhone
-} from "./account-client.js";
-import { readConfig, type AppConfig } from "./config.js";
-import { configuredLoginId, findConfiguredLoginUser, readConfiguredLoginUsers, type ConfiguredLoginUser } from "./login-config.js";
-import { RequestRateLimiter } from "./rate-limit.js";
-import { AccountAlreadyLinkedError, type AppUser, MultiUserStore, type TelegramAccountWithSession } from "./store.js";
+} from "./account-client.ts";
+import { readConfig, type AppConfig } from "./config.ts";
+import { configuredLoginId, findConfiguredLoginUser, readConfiguredLoginUsers, type ConfiguredLoginUser } from "./login-config.ts";
+import { RequestRateLimiter } from "./rate-limit.ts";
+import { AccountAlreadyLinkedError, type AppUser, MultiUserStore, type TelegramAccountWithSession } from "./store.ts";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 type JsonBody = Record<string, unknown>;
