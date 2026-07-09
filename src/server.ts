@@ -11,8 +11,8 @@ import {
   listenForAccount,
   normalizePhone
 } from "./account-client.js";
-import { readConfig } from "./config.js";
-import { configuredLoginId, findConfiguredLoginUser, readConfiguredLoginUsers } from "./login-config.js";
+import { readConfig, type AppConfig } from "./config.js";
+import { configuredLoginId, findConfiguredLoginUser, readConfiguredLoginUsers, type ConfiguredLoginUser } from "./login-config.js";
 import { RequestRateLimiter } from "./rate-limit.js";
 import { AccountAlreadyLinkedError, type AppUser, MultiUserStore, type TelegramAccountWithSession } from "./store.js";
 
@@ -25,10 +25,10 @@ class HttpError extends Error {
   }
 }
 
-const config = readConfig();
-const configuredLoginUsers = readConfiguredLoginUsers();
-const store = new MultiUserStore(config.databaseUrl, config.sessionEncryptionKey);
-const limiter = new RequestRateLimiter(config.rateLimitWindowSeconds * 1_000);
+let config: AppConfig;
+let configuredLoginUsers: ConfiguredLoginUser[];
+let store: MultiUserStore;
+let limiter: RequestRateLimiter;
 const publicFiles = new Map([
   ["/", { file: "index.html", type: "text/html; charset=utf-8" }],
   ["/app.js", { file: "app.js", type: "text/javascript; charset=utf-8" }],
@@ -38,6 +38,27 @@ type TelegramListenerClient = Awaited<ReturnType<typeof listenForAccount>>;
 
 const telegramListeners = new Map<string, TelegramListenerClient>();
 const startingTelegramListeners = new Map<string, Promise<void>>();
+const secretEnvironmentNames = [
+  "TELEGRAM_API_HASH",
+  "DATABASE_URL",
+  "SESSION_ENCRYPTION_KEY",
+  "USER_PROVISIONING_KEY",
+  "TELEGRAM_BOT_TOKEN"
+];
+
+function redactedErrorMessage(error: unknown) {
+  let message = error instanceof Error ? error.message : String(error);
+  if (!message || message === "undefined") return "Unexpected error.";
+
+  message = message.replace(/((?:postgres(?:ql)?|mysql|mariadb):\/\/[^:\s/]+:)[^@\s]+(@)/gi, "$1[redacted]$2");
+  for (const name of secretEnvironmentNames) {
+    const value = process.env[name]?.trim();
+    if (value && value.length > 3) {
+      message = message.split(value).join(`[${name} redacted]`);
+    }
+  }
+  return message;
+}
 
 function responseHeaders(request: IncomingMessage, contentType: string) {
   const headers: Record<string, string | number> = {
@@ -580,6 +601,11 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 }
 
 async function main() {
+  config = readConfig();
+  configuredLoginUsers = readConfiguredLoginUsers();
+  store = new MultiUserStore(config.databaseUrl, config.sessionEncryptionKey);
+  limiter = new RequestRateLimiter(config.rateLimitWindowSeconds * 1_000);
+
   await store.initialize();
   const server = createServer((request, response) => {
     void handleRequest(request, response).catch((error: unknown) => {
@@ -611,7 +637,7 @@ async function main() {
   process.once("SIGTERM", () => void shutdown());
 }
 
-main().catch(() => {
-  console.error("Server startup failed without logging configuration values.");
+main().catch((error: unknown) => {
+  console.error(`Server startup failed: ${redactedErrorMessage(error)}`);
   process.exitCode = 1;
 });
